@@ -24,3 +24,6 @@ env/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Evaluation Audio Samples
+Vboard_backend/eval/audio/
