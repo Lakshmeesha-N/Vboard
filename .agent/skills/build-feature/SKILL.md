@@ -17,7 +17,7 @@ description: Implement an explicitly approved feature plan in Vboard_backend or 
 
 ## Implementation
 - Implement only the approved scope. Do not add unrequested features or perform unrelated refactoring.
-- Make small, controlled changes, generally affecting no more than 3–4 files per step.
+- Make small, controlled changes, generally affecting no more than 4–5 files per step.
 - Preserve existing functionality and follow project architecture and conventions.
 - Prioritize security and privacy, then latency and maintainability.
 - Never log or expose secrets, audio, transcripts, or sensitive data.

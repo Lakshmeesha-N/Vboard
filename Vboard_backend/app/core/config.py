@@ -26,7 +26,7 @@ class Settings(BaseSettings):
         description="API key for Meta/Llama API services",
     )
     META_BASE_URL: Optional[str] = Field(
-        default=None,
+        default="https://api.meta.ai/v1",
         description="Base URL for Meta API endpoints",
     )
 
@@ -38,7 +38,7 @@ class Settings(BaseSettings):
 
     # Voice / Audio model defaults
     DEFAULT_VOICE_MODEL: str = Field(
-        default="openai/whisper-large-v3",
+        default="muse-voice-transcribe-1.0",
         description="Default voice/ASR model identifier",
     )
 
