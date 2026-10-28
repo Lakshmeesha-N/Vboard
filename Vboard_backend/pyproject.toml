@@ -6,7 +6,6 @@ build-backend = "hatchling.build"
 name = "vboard-backend"
 version = "0.1.0"
 description = "Speak how you think. Type how you want."
-readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.115.0",
@@ -18,7 +17,11 @@ dependencies = [
     "huggingface-hub>=0.25.0",
     "loguru>=0.7.2",
     "python-multipart>=0.0.12",
+    "jiwer>=3.0.0",
 ]
+
+[project.scripts]
+eval-audio = "scripts.eval_audio:main"
 
 [project.optional-dependencies]
 dev = [
@@ -34,7 +37,7 @@ eval = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["app"]
+packages = ["app", "scripts"]
 
 [tool.ruff]
 line-length = 88

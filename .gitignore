@@ -25,5 +25,8 @@ env/
 .DS_Store
 Thumbs.db
 
-# Evaluation Audio Samples
+# Evaluation Audio Samples and Results
+eval/audio/
+eval/results/
 Vboard_backend/eval/audio/
+Vboard_backend/eval/results/
