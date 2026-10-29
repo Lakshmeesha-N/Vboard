@@ -10,7 +10,7 @@ from app.core.validators import (
     validate_context_text,
     validate_device_id,
 )
-from app.schemas.process import ProcessResponse
+from app.schemas.process import ActionModel, ProcessResponse
 from app.services import pipeline
 
 router = APIRouter()
@@ -48,26 +48,51 @@ async def process_audio(
         wav_bytes,
         languages=parsed_langs,
         read_ms=read_ms,
+        context_text=context_text or "",
     )
 
-    # Always log timing numbers with device_id (numbers only, never audio/text)
+    # Always log timing numbers with device_id (numbers and reason codes only)
     t = result.timings_ms
+    action_type = result.action.type if result.action else "none"
     logger.info(
         "Timings for device {}: read_ms={:.2f}, guardrail_ms={:.2f}, "
-        "stt_ms={:.2f}, total_ms={:.2f}",
+        "stt_ms={:.2f}, spark_ms={:.2f}, total_ms={:.2f}, "
+        "action_type={}, used_fallback={}, fallback_reason={}, "
+        "prompt_tokens={}, completion_tokens={}, cached_tokens={}, "
+        "reasoning_tokens={}",
         device_id or "none",
         t.get("read_ms", 0.0),
         t.get("guardrail_ms", 0.0),
         t.get("stt_ms", 0.0),
+        t.get("spark_ms", 0.0),
         t.get("total_ms", 0.0),
+        action_type,
+        result.used_fallback,
+        result.fallback_reason or "none",
+        result.prompt_tokens,
+        result.completion_tokens,
+        result.cached_tokens,
+        result.reasoning_tokens,
     )
 
     # Include timings_ms in response only when DEBUG is enabled
     response_timings = result.timings_ms if settings.DEBUG else None
 
+    action_model = None
+    if result.action is not None:
+        action_model = ActionModel(
+            action=result.action.type,
+            text=result.action.text,
+            find=result.action.find,
+            which=getattr(result.action, "which", None),
+        )
+
     return ProcessResponse(
         transcript=result.transcript,
         timing_ms=result.timings_ms["total_ms"],
         audio_duration_ms=result.audio_duration_ms,
+        action=action_model,
+        used_fallback=result.used_fallback,
+        note=result.fallback_reason,
         timings_ms=response_timings,
     )

@@ -3,7 +3,8 @@ from dataclasses import dataclass
 from typing import Optional
 
 from app.core.audio import validate_wav_bytes
-from app.services import stt_service
+from app.services import action_service, stt_service
+from app.services.action_service import Action
 
 
 @dataclass(frozen=True)
@@ -13,18 +14,26 @@ class PipelineResult:
     transcript: str
     audio_duration_ms: int
     timings_ms: dict[str, float]
+    action: Optional[Action]
+    used_fallback: bool
+    fallback_reason: Optional[str]
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    cached_tokens: int = 0
+    reasoning_tokens: int = 0
 
 
 async def run(
     wav_bytes: bytes,
     languages: Optional[list[str]] = None,
     read_ms: float = 0.0,
+    context_text: str = "",
 ) -> PipelineResult:
     """
-    Execute speech processing pipeline: guardrail -> STT (later Spark).
+    Execute speech processing pipeline: guardrail -> STT -> Spark action_service.
 
     Measures execution time for each stage with time.perf_counter().
-    Maintains zero audio and zero transcript logging.
+    Maintains zero audio, transcript, and text logging.
     """
     total_start = time.perf_counter()
 
@@ -38,6 +47,11 @@ async def run(
     stt_res = await stt_service.transcribe(wav_bytes, languages=languages)
     stt_ms = (time.perf_counter() - stt_start) * 1000.0
 
+    # Stage 3: Spark Action Service
+    spark_start = time.perf_counter()
+    action_res = await action_service.process(stt_res.transcript, context_text)
+    spark_ms = (time.perf_counter() - spark_start) * 1000.0
+
     pipeline_elapsed_ms = (time.perf_counter() - total_start) * 1000.0
     total_ms = pipeline_elapsed_ms + read_ms
 
@@ -45,6 +59,7 @@ async def run(
         "read_ms": round(read_ms, 2),
         "guardrail_ms": round(guardrail_ms, 2),
         "stt_ms": round(stt_ms, 2),
+        "spark_ms": round(spark_ms, 2),
         "total_ms": round(total_ms, 2),
     }
 
@@ -52,4 +67,11 @@ async def run(
         transcript=stt_res.transcript,
         audio_duration_ms=stt_res.audio_duration_ms,
         timings_ms=timings,
+        action=action_res.action,
+        used_fallback=action_res.used_fallback,
+        fallback_reason=action_res.fallback_reason,
+        prompt_tokens=action_res.prompt_tokens,
+        completion_tokens=action_res.completion_tokens,
+        cached_tokens=action_res.cached_tokens,
+        reasoning_tokens=action_res.reasoning_tokens,
     )

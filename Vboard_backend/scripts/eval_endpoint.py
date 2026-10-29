@@ -154,7 +154,10 @@ def evaluate_endpoint(
         with open(warmup_file, "rb") as f:
             warmup_bytes = f.read()
 
-        warmup_data: dict[str, Any] = {"device_id": "eval_warmup"}
+        warmup_data: dict[str, Any] = {
+            "device_id": "eval_warmup",
+            "context_text": "",
+        }
         if lang:
             warmup_data["languages"] = lang
 
@@ -194,7 +197,10 @@ def evaluate_endpoint(
                 with open(clip_path, "rb") as f:
                     clip_bytes = f.read()
 
-                post_data: dict[str, Any] = {"device_id": f"eval_run_{run_idx}"}
+                post_data: dict[str, Any] = {
+                    "device_id": f"eval_run_{run_idx}",
+                    "context_text": "",
+                }
                 if lang:
                     post_data["languages"] = lang
 
@@ -219,12 +225,14 @@ def evaluate_endpoint(
                 read_ms = t_stages.get("read_ms", 0.0)
                 guardrail_ms = t_stages.get("guardrail_ms", 0.0)
                 stt_ms = t_stages.get("stt_ms", 0.0)
+                spark_ms = t_stages.get("spark_ms")
                 server_total_ms = t_stages.get("total_ms", 0.0)
                 network_overhead_ms = max(0.0, client_total_ms - server_total_ms)
                 cost = estimate_muse_cost(duration_ms)
 
                 # Check for unmeasured stages: is sum of stages far from server total?
-                sum_stages = read_ms + guardrail_ms + stt_ms
+                spark_val = float(spark_ms) if spark_ms is not None else 0.0
+                sum_stages = read_ms + guardrail_ms + stt_ms + spark_val
                 if abs(sum_stages - server_total_ms) > 20.0 and (
                     server_total_ms > 0
                     and abs(sum_stages - server_total_ms) / server_total_ms > 0.15
@@ -234,7 +242,7 @@ def evaluate_endpoint(
                         f"sum={sum_stages:.1f}ms vs total={server_total_ms:.1f}ms"
                     )
 
-                records.append({
+                rec: dict[str, Any] = {
                     "clip_name": clip_path.name,
                     "run_idx": run_idx,
                     "audio_duration_ms": duration_ms,
@@ -242,22 +250,34 @@ def evaluate_endpoint(
                     "read_ms": round(read_ms, 2),
                     "guardrail_ms": round(guardrail_ms, 2),
                     "stt_ms": round(stt_ms, 2),
+                }
+                if spark_ms is not None:
+                    rec["spark_ms"] = round(float(spark_ms), 2)
+                rec.update({
                     "server_total_ms": round(server_total_ms, 2),
                     "network_overhead_ms": round(network_overhead_ms, 2),
                     "estimated_cost_usd": round(cost, 6),
                 })
+                records.append(rec)
 
+                spark_str = (
+                    f"Spark: {float(spark_ms):5.1f}ms | "
+                    if spark_ms is not None
+                    else ""
+                )
                 print(
                     f"[{clip_idx}/{len(wav_files)}] {clip_path.name:<20} "
                     f"Client: {client_total_ms:6.1f}ms | "
                     f"Read: {read_ms:5.1f}ms | "
                     f"Guard: {guardrail_ms:5.1f}ms | "
                     f"STT: {stt_ms:6.1f}ms | "
+                    f"{spark_str}"
                     f"Net: {network_overhead_ms:5.1f}ms"
                 )
 
         # Write results to CSV (strictly numbers only, NO audio or text)
         if records:
+            has_spark = any("spark_ms" in r for r in records)
             fieldnames = [
                 "clip_name",
                 "run_idx",
@@ -266,10 +286,14 @@ def evaluate_endpoint(
                 "read_ms",
                 "guardrail_ms",
                 "stt_ms",
+            ]
+            if has_spark:
+                fieldnames.append("spark_ms")
+            fieldnames.extend([
                 "server_total_ms",
                 "network_overhead_ms",
                 "estimated_cost_usd",
-            ]
+            ])
             with open(csv_path, mode="w", newline="", encoding="utf-8") as f:
                 writer = csv.DictWriter(f, fieldnames=fieldnames)
                 writer.writeheader()
@@ -286,10 +310,15 @@ def evaluate_endpoint(
                 ("read_ms", [r["read_ms"] for r in records]),
                 ("guardrail_ms", [r["guardrail_ms"] for r in records]),
                 ("stt_ms", [r["stt_ms"] for r in records]),
+            ]
+            if has_spark:
+                spark_vals = [r["spark_ms"] for r in records if "spark_ms" in r]
+                stages.append(("spark_ms", spark_vals))
+            stages.extend([
                 ("server_total_ms", [r["server_total_ms"] for r in records]),
                 ("network_overhead_ms", [r["network_overhead_ms"] for r in records]),
                 ("client_total_ms", [r["client_total_ms"] for r in records]),
-            ]
+            ])
 
             client_avg = sum(r["client_total_ms"] for r in records) / len(records)
 
