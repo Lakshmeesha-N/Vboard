@@ -11,14 +11,6 @@ from app.core.exceptions import MetaApiError, RateLimitedError
 from app.services import llm_service
 
 SPARK_SYSTEM_PROMPT = (
-    "You are an AI assistant for a keyboard application. "
-    "Given the current text in the input box (<box>...</box>) and the "
-    "user's spoken instruction (<spoken>...</spoken>), determine the editing action. "
-    "Output must be a valid JSON object matching one of the following schemas:\n"
-    '1. Insert: {"type": "insert", "text": "<text to insert>"}\n'
-    '2. Replace: {"type": "replace", "find": "<target>", "text": "<replacement>"}\n'
-    '3. Rewrite: {"type": "rewrite", "text": "<full rewritten box text>"}\n'
-    "Ensure output text is cleanly formatted. Return only the JSON object."
 )
 
 ACTION_RESPONSE_FORMAT = {"type": "json_object"}
