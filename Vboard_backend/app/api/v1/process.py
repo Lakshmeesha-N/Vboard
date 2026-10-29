@@ -81,10 +81,10 @@ async def process_audio(
     action_model = None
     if result.action is not None:
         action_model = ActionModel(
-            action=result.action.type,
+            action=result.action.action,
             text=result.action.text,
             find=result.action.find,
-            which=getattr(result.action, "which", None),
+            which=result.action.which,
         )
 
     return ProcessResponse(

@@ -17,7 +17,7 @@ async def test_pipeline_run_success_and_timings():
         audio_duration_ms=1000,
     )
     mock_action = ActionResult(
-        action=Action(type="insert", text="Test pipeline"),
+        action=Action(action="insert", text="Test pipeline", find="", which="last"),
         used_fallback=False,
         fallback_reason=None,
         elapsed_ms=45.0,
@@ -48,7 +48,9 @@ async def test_pipeline_run_success_and_timings():
 
     assert res.transcript == "Test pipeline"
     assert res.audio_duration_ms == 1000
-    assert res.action == Action(type="insert", text="Test pipeline")
+    assert res.action == Action(
+        action="insert", text="Test pipeline", find="", which="last"
+    )
     assert res.used_fallback is False
     assert res.fallback_reason is None
     assert res.prompt_tokens == 30
@@ -60,9 +62,13 @@ async def test_pipeline_run_success_and_timings():
     assert res.timings_ms["guardrail_ms"] >= 0
     assert res.timings_ms["stt_ms"] >= 0
     assert res.timings_ms["spark_ms"] >= 0
-    assert res.timings_ms["total_ms"] >= round(
-        res.timings_ms["guardrail_ms"]
-        + res.timings_ms["stt_ms"]
-        + res.timings_ms["spark_ms"],
-        2,
-    ) - 0.01
+    assert (
+        res.timings_ms["total_ms"]
+        >= round(
+            res.timings_ms["guardrail_ms"]
+            + res.timings_ms["stt_ms"]
+            + res.timings_ms["spark_ms"],
+            2,
+        )
+        - 0.01
+    )

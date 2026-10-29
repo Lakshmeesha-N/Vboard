@@ -8,21 +8,11 @@ from loguru import logger
 
 from app.core.config import settings
 from app.core.exceptions import MetaApiError, RateLimitedError
+from app.prompts import SPARK_SYSTEM_PROMPT
+from app.schemas.actions import Action
 from app.services import llm_service
 
-SPARK_SYSTEM_PROMPT = (
-)
-
 ACTION_RESPONSE_FORMAT = {"type": "json_object"}
-
-
-@dataclass
-class Action:
-    """Editing action to apply to the input box."""
-
-    type: str  # "insert" | "replace" | "rewrite"
-    text: str
-    find: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -50,7 +40,12 @@ def build_user_message(box: str, spoken: str) -> str:
 
 
 def parse_action(reply_text: str) -> Optional[Action]:
-    """Parse and validate JSON action reply, returning None on any schema violation."""
+    """
+    Parse and validate JSON action reply strictly.
+
+    Requires 'action', 'text', 'find'. Does NOT accept 'type'.
+    'which' defaults to 'last' only when omitted.
+    """
     if not reply_text or not reply_text.strip():
         return None
 
@@ -67,8 +62,12 @@ def parse_action(reply_text: str) -> Optional[Action]:
     if not isinstance(data, dict):
         return None
 
-    action_type = data.get("type")
-    if action_type not in ("insert", "replace", "rewrite"):
+    # Strict requirement: Do not accept "type", must have "action"
+    if "type" in data and "action" not in data:
+        return None
+
+    action_name = data.get("action")
+    if action_name not in ("insert", "replace", "rewrite"):
         return None
 
     text = data.get("text")
@@ -76,12 +75,17 @@ def parse_action(reply_text: str) -> Optional[Action]:
         return None
 
     find = data.get("find")
-    if action_type == "replace":
-        if not isinstance(find, str) or not find.strip():
-            return None
-        return Action(type="replace", text=text, find=find)
+    if not isinstance(find, str):
+        return None
 
-    return Action(type=action_type, text=text)
+    which = data.get("which", "last")
+    if not isinstance(which, str) or not which.strip():
+        which = "last"
+
+    if action_name == "replace" and not find.strip():
+        return None
+
+    return Action(action=action_name, text=text, find=find, which=which)
 
 
 async def process(
@@ -151,14 +155,14 @@ async def process(
         )
     except (RateLimitedError, MetaApiError):
         # 2e. Catch ONLY RateLimitedError and MetaApiError -> spark_error fallback
-        action = Action(type="insert", text=spoken_text)
+        action = Action(action="insert", text=spoken_text, find="", which="last")
         used_fallback = True
         fallback_reason = "spark_error"
         logger.info(
             "Action result: elapsed_ms=0.00, prompt_tokens=0, completion_tokens=0, "
             "cached_tokens=0, reasoning_tokens=0, action_type={}, "
             "used_fallback={}, fallback_reason={}",
-            action.type,
+            action.action,
             used_fallback,
             fallback_reason,
         )
@@ -182,17 +186,17 @@ async def process(
     # 2f. Parse action reply
     parsed = parse_action(reply.text)
     if parsed is None:
-        action = Action(type="insert", text=spoken_text)
+        action = Action(action="insert", text=spoken_text, find="", which="last")
         used_fallback = True
         fallback_reason = "bad_reply"
     # 2g. Empty box check for replace or rewrite
-    elif not box_text.strip() and parsed.type in ("replace", "rewrite"):
-        action = Action(type="insert", text=spoken_text)
+    elif not box_text.strip() and parsed.action in ("replace", "rewrite"):
+        action = Action(action="insert", text=spoken_text, find="", which="last")
         used_fallback = True
         fallback_reason = "not_allowed_empty_box"
     # 2h. Replace reconciliation
-    elif parsed.type == "replace":
-        find_target = parsed.find or ""
+    elif parsed.action == "replace":
+        find_target = parsed.find
         if find_target in box_text:
             action = parsed
             used_fallback = False
@@ -214,7 +218,7 @@ async def process(
         used_fallback = False
         fallback_reason = None
 
-    action_type = action.type if action else None
+    action_type = action.action if action else None
     logger.info(
         "Action result: elapsed_ms={:.2f}, prompt_tokens={}, completion_tokens={}, "
         "cached_tokens={}, reasoning_tokens={}, action_type={}, "

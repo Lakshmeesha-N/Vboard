@@ -253,11 +253,13 @@ def evaluate_endpoint(
                 }
                 if spark_ms is not None:
                     rec["spark_ms"] = round(float(spark_ms), 2)
-                rec.update({
-                    "server_total_ms": round(server_total_ms, 2),
-                    "network_overhead_ms": round(network_overhead_ms, 2),
-                    "estimated_cost_usd": round(cost, 6),
-                })
+                rec.update(
+                    {
+                        "server_total_ms": round(server_total_ms, 2),
+                        "network_overhead_ms": round(network_overhead_ms, 2),
+                        "estimated_cost_usd": round(cost, 6),
+                    }
+                )
                 records.append(rec)
 
                 spark_str = (
@@ -289,11 +291,13 @@ def evaluate_endpoint(
             ]
             if has_spark:
                 fieldnames.append("spark_ms")
-            fieldnames.extend([
-                "server_total_ms",
-                "network_overhead_ms",
-                "estimated_cost_usd",
-            ])
+            fieldnames.extend(
+                [
+                    "server_total_ms",
+                    "network_overhead_ms",
+                    "estimated_cost_usd",
+                ]
+            )
             with open(csv_path, mode="w", newline="", encoding="utf-8") as f:
                 writer = csv.DictWriter(f, fieldnames=fieldnames)
                 writer.writeheader()
@@ -314,11 +318,16 @@ def evaluate_endpoint(
             if has_spark:
                 spark_vals = [r["spark_ms"] for r in records if "spark_ms" in r]
                 stages.append(("spark_ms", spark_vals))
-            stages.extend([
-                ("server_total_ms", [r["server_total_ms"] for r in records]),
-                ("network_overhead_ms", [r["network_overhead_ms"] for r in records]),
-                ("client_total_ms", [r["client_total_ms"] for r in records]),
-            ])
+            stages.extend(
+                [
+                    ("server_total_ms", [r["server_total_ms"] for r in records]),
+                    (
+                        "network_overhead_ms",
+                        [r["network_overhead_ms"] for r in records],
+                    ),
+                    ("client_total_ms", [r["client_total_ms"] for r in records]),
+                ]
+            )
 
             client_avg = sum(r["client_total_ms"] for r in records) / len(records)
 

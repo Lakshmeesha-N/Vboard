@@ -83,4 +83,3 @@ def parse_languages(languages: Optional[str]) -> Optional[list[str]]:
 
     # Trim to maximum allowed languages count (5)
     return valid_langs[: settings.MAX_LANGUAGES_COUNT]
-

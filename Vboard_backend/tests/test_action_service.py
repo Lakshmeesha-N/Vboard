@@ -31,32 +31,68 @@ def make_mock_reply(
     )
 
 
+def test_spark_system_prompt_content():
+    """Verify prompt is non-empty and contains required action and which keywords."""
+    assert SPARK_SYSTEM_PROMPT
+    prompt_lower = SPARK_SYSTEM_PROMPT.lower()
+    for keyword in ("insert", "replace", "rewrite", "first", "last", "all"):
+        assert keyword in prompt_lower, f"Keyword '{keyword}' missing from prompt"
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "reply_json, expected_type, expected_text, expected_find",
+    "reply_json, expected_action, expected_text, expected_find, expected_which",
     [
         (
-            json.dumps({"type": "insert", "text": "hello"}),
+            json.dumps(
+                {
+                    "action": "insert",
+                    "text": "hello",
+                    "find": "",
+                    "which": "last",
+                }
+            ),
             "insert",
             "hello",
-            None,
+            "",
+            "last",
         ),
         (
-            json.dumps({"type": "replace", "find": "world", "text": "everyone"}),
+            json.dumps(
+                {
+                    "action": "replace",
+                    "find": "world",
+                    "text": "everyone",
+                    "which": "last",
+                }
+            ),
             "replace",
             "everyone",
             "world",
+            "last",
         ),
         (
-            json.dumps({"type": "rewrite", "text": "complete new text"}),
+            json.dumps(
+                {
+                    "action": "rewrite",
+                    "text": "complete new text",
+                    "find": "",
+                    "which": "last",
+                }
+            ),
             "rewrite",
             "complete new text",
-            None,
+            "",
+            "last",
         ),
     ],
 )
 async def test_valid_actions_pass_through_without_fallback(
-    reply_json, expected_type, expected_text, expected_find
+    reply_json,
+    expected_action,
+    expected_text,
+    expected_find,
+    expected_which,
 ):
     mock_complete = AsyncMock(return_value=make_mock_reply(reply_json))
 
@@ -67,9 +103,11 @@ async def test_valid_actions_pass_through_without_fallback(
     assert res.used_fallback is False
     assert res.fallback_reason is None
     assert res.action is not None
-    assert res.action.type == expected_type
+    assert res.action.action == expected_action
+    assert res.action.type == expected_action
     assert res.action.text == expected_text
     assert res.action.find == expected_find
+    assert res.action.which == expected_which
     assert res.elapsed_ms == 120.0
     assert res.prompt_tokens == 50
     assert res.completion_tokens == 25
@@ -94,7 +132,9 @@ async def test_spark_error_falls_back_to_plain_insert(error_exc):
 
     assert res.used_fallback is True
     assert res.fallback_reason == "spark_error"
-    assert res.action == Action(type="insert", text="original spoken text")
+    assert res.action == Action(
+        action="insert", text="original spoken text", find="", which="last"
+    )
     assert res.elapsed_ms == 0.0
     assert res.prompt_tokens == 0
     assert res.completion_tokens == 0
@@ -107,10 +147,44 @@ async def test_spark_error_falls_back_to_plain_insert(error_exc):
         "",  # empty reply
         "   ",  # whitespace reply
         "{not valid json",  # bad json
-        json.dumps({"type": "unknown", "text": "hi"}),  # rule violation: bad type
-        json.dumps({"type": "insert"}),  # rule violation: missing text
-        json.dumps({"type": "replace", "text": "only text"}),  # missing find
-        json.dumps({"type": "replace", "find": "", "text": "new"}),  # empty find
+        json.dumps(
+            {
+                "action": "unknown",
+                "text": "hi",
+                "find": "",
+                "which": "last",
+            }
+        ),  # bad action
+        json.dumps(
+            {
+                "action": "insert",
+                "find": "",
+                "which": "last",
+            }
+        ),  # missing text
+        json.dumps(
+            {
+                "action": "replace",
+                "text": "only text",
+                "which": "last",
+            }
+        ),  # missing find
+        json.dumps(
+            {
+                "action": "replace",
+                "find": "",
+                "text": "new",
+                "which": "last",
+            }
+        ),  # empty find on replace
+        json.dumps(
+            {
+                "type": "insert",
+                "text": "hello",
+                "find": "",
+                "which": "last",
+            }
+        ),  # "type" is rejected
         json.dumps(["not", "a", "dict"]),  # list instead of dict
     ],
 )
@@ -122,14 +196,23 @@ async def test_bad_replies_fallback_to_plain_insert(bad_reply_text):
 
     assert res.used_fallback is True
     assert res.fallback_reason == "bad_reply"
-    assert res.action == Action(type="insert", text="fallback voice")
+    assert res.action == Action(
+        action="insert", text="fallback voice", find="", which="last"
+    )
     assert res.elapsed_ms == 120.0
     assert res.prompt_tokens == 50
 
 
 @pytest.mark.asyncio
 async def test_replace_find_not_found_returns_none_action_no_insert():
-    reply_json = json.dumps({"type": "replace", "find": "nonexistent", "text": "sub"})
+    reply_json = json.dumps(
+        {
+            "action": "replace",
+            "find": "nonexistent",
+            "text": "sub",
+            "which": "last",
+        }
+    )
     mock_complete = AsyncMock(return_value=make_mock_reply(reply_json))
 
     with patch("app.services.action_service.llm_service.complete", mock_complete):
@@ -150,7 +233,12 @@ async def test_replace_find_not_found_returns_none_action_no_insert():
 async def test_replace_case_insensitive_match_corrected_to_box_text():
     # Box text has "Hello World", Spark returned lowercase "hello world"
     reply_json = json.dumps(
-        {"type": "replace", "find": "hello world", "text": "Greetings"}
+        {
+            "action": "replace",
+            "find": "hello world",
+            "text": "Greetings",
+            "which": "last",
+        }
     )
     mock_complete = AsyncMock(return_value=make_mock_reply(reply_json))
 
@@ -163,21 +251,42 @@ async def test_replace_case_insensitive_match_corrected_to_box_text():
     assert res.used_fallback is False
     assert res.fallback_reason is None
     assert res.action is not None
-    assert res.action.type == "replace"
+    assert res.action.action == "replace"
     assert res.action.find == "Hello World"  # Corrected to exact box slice
     assert res.action.text == "Greetings"
+    assert res.action.which == "last"
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "reply_json, action_type",
+    "reply_json, action_name",
     [
-        (json.dumps({"type": "replace", "find": "foo", "text": "bar"}), "replace"),
-        (json.dumps({"type": "rewrite", "text": "brand new"}), "rewrite"),
+        (
+            json.dumps(
+                {
+                    "action": "replace",
+                    "find": "foo",
+                    "text": "bar",
+                    "which": "last",
+                }
+            ),
+            "replace",
+        ),
+        (
+            json.dumps(
+                {
+                    "action": "rewrite",
+                    "text": "brand new",
+                    "find": "",
+                    "which": "last",
+                }
+            ),
+            "rewrite",
+        ),
     ],
 )
 async def test_replace_or_rewrite_with_empty_box_falls_back_to_plain_insert(
-    reply_json, action_type
+    reply_json, action_name
 ):
     mock_complete = AsyncMock(return_value=make_mock_reply(reply_json))
 
@@ -186,7 +295,9 @@ async def test_replace_or_rewrite_with_empty_box_falls_back_to_plain_insert(
 
     assert res.used_fallback is True
     assert res.fallback_reason == "not_allowed_empty_box"
-    assert res.action == Action(type="insert", text="say something")
+    assert res.action == Action(
+        action="insert", text="say something", find="", which="last"
+    )
 
 
 @pytest.mark.asyncio
@@ -211,7 +322,16 @@ async def test_empty_or_whitespace_spoken_text_returns_none_without_spark_call(
 @pytest.mark.asyncio
 async def test_text_cleaning_removes_box_and_spoken_tags():
     mock_complete = AsyncMock(
-        return_value=make_mock_reply(json.dumps({"type": "insert", "text": "clean"}))
+        return_value=make_mock_reply(
+            json.dumps(
+                {
+                    "action": "insert",
+                    "text": "clean",
+                    "find": "",
+                    "which": "last",
+                }
+            )
+        )
     )
 
     dirty_box = "Before <box>in the box</box> and <BOX>upper</BOX>"
@@ -234,7 +354,16 @@ async def test_text_cleaning_removes_box_and_spoken_tags():
 @pytest.mark.asyncio
 async def test_spark_call_has_system_prompt_first_and_user_message_last():
     mock_complete = AsyncMock(
-        return_value=make_mock_reply(json.dumps({"type": "insert", "text": "ok"}))
+        return_value=make_mock_reply(
+            json.dumps(
+                {
+                    "action": "insert",
+                    "text": "ok",
+                    "find": "",
+                    "which": "last",
+                }
+            )
+        )
     )
 
     with patch("app.services.action_service.llm_service.complete", mock_complete):
@@ -257,7 +386,14 @@ async def test_caplog_zero_text_leak_privacy(caplog):
 
     mock_complete = AsyncMock(
         return_value=make_mock_reply(
-            json.dumps({"type": "insert", "text": secret_reply})
+            json.dumps(
+                {
+                    "action": "insert",
+                    "text": secret_reply,
+                    "find": "",
+                    "which": "last",
+                }
+            )
         )
     )
 

@@ -65,4 +65,3 @@ def test_parse_languages_trims_to_five_max():
     res = parse_languages(raw)
     assert res == ["Kannada", "English", "Hindi", "Tamil", "Telugu"]
     assert len(res) == 5
-

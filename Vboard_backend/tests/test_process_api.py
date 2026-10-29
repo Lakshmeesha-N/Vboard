@@ -25,7 +25,7 @@ def valid_24k_wav() -> bytes:
 @pytest.fixture(autouse=True)
 def mock_default_action():
     default_res = ActionResult(
-        action=Action(type="insert", text="default text"),
+        action=Action(action="insert", text="default text", find="", which="last"),
         used_fallback=False,
         fallback_reason=None,
         elapsed_ms=10.0,
@@ -67,8 +67,8 @@ async def test_process_valid_16k_success(valid_16k_wav):
     assert data["action"] == {
         "action": "insert",
         "text": "default text",
-        "find": None,
-        "which": None,
+        "find": "",
+        "which": "last",
     }
     assert data["used_fallback"] is False
     assert data["note"] is None
@@ -421,12 +421,16 @@ async def test_process_timings_included_when_debug_true(valid_16k_wav):
     assert "stt_ms" in data["timings_ms"]
     assert "spark_ms" in data["timings_ms"]
     assert "total_ms" in data["timings_ms"]
-    assert data["timings_ms"]["total_ms"] >= round(
-        data["timings_ms"]["guardrail_ms"]
-        + data["timings_ms"]["stt_ms"]
-        + data["timings_ms"]["spark_ms"],
-        2,
-    ) - 0.01
+    assert (
+        data["timings_ms"]["total_ms"]
+        >= round(
+            data["timings_ms"]["guardrail_ms"]
+            + data["timings_ms"]["stt_ms"]
+            + data["timings_ms"]["spark_ms"],
+            2,
+        )
+        - 0.01
+    )
 
 
 @pytest.mark.asyncio
@@ -461,9 +465,9 @@ async def test_process_timings_omitted_when_debug_false(valid_16k_wav):
 @pytest.mark.parametrize(
     "action_type, action_text, action_find",
     [
-        ("insert", "new text", None),
+        ("insert", "new text", ""),
         ("replace", "replacement text", "target word"),
-        ("rewrite", "full rewritten box text", None),
+        ("rewrite", "full rewritten box text", ""),
     ],
 )
 async def test_process_actions_insert_replace_rewrite(
@@ -473,7 +477,9 @@ async def test_process_actions_insert_replace_rewrite(
         transcript="sample speech", elapsed_ms=80.0, audio_duration_ms=1000
     )
     mock_act = ActionResult(
-        action=Action(type=action_type, text=action_text, find=action_find),
+        action=Action(
+            action=action_type, text=action_text, find=action_find, which="last"
+        ),
         used_fallback=False,
         fallback_reason=None,
         elapsed_ms=30.0,
@@ -504,7 +510,7 @@ async def test_process_actions_insert_replace_rewrite(
         "action": action_type,
         "text": action_text,
         "find": action_find,
-        "which": None,
+        "which": "last",
     }
     assert data["used_fallback"] is False
     assert data["note"] is None
@@ -518,7 +524,9 @@ async def test_process_spark_fallback_gives_http_200_with_insert_and_note(
         transcript="raw transcript text", elapsed_ms=80.0, audio_duration_ms=1000
     )
     mock_act = ActionResult(
-        action=Action(type="insert", text="raw transcript text"),
+        action=Action(
+            action="insert", text="raw transcript text", find="", which="last"
+        ),
         used_fallback=True,
         fallback_reason="spark_error",
         elapsed_ms=0.0,
@@ -550,8 +558,8 @@ async def test_process_spark_fallback_gives_http_200_with_insert_and_note(
     assert data["action"] == {
         "action": "insert",
         "text": "raw transcript text",
-        "find": None,
-        "which": None,
+        "find": "",
+        "which": "last",
     }
 
 
@@ -642,7 +650,7 @@ async def test_process_context_text_reaches_action_service_and_not_logged(
         transcript="voice words", elapsed_ms=80.0, audio_duration_ms=1000
     )
     mock_act = ActionResult(
-        action=Action(type="insert", text="voice words"),
+        action=Action(action="insert", text="voice words", find="", which="last"),
         used_fallback=False,
         fallback_reason=None,
         elapsed_ms=20.0,
@@ -672,9 +680,7 @@ async def test_process_context_text_reaches_action_service_and_not_logged(
                 resp = await c.post("/v1/process", files=files, data=data)
 
         assert resp.status_code == 200
-        mock_action_process.assert_awaited_once_with(
-            "voice words", secret_box_context
-        )
+        mock_action_process.assert_awaited_once_with("voice words", secret_box_context)
         assert secret_box_context not in caplog.text
         assert "spark_ms=" in caplog.text
     finally:

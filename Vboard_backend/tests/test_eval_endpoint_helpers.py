@@ -40,4 +40,3 @@ def test_compute_percentile_simple_examples():
     # Check p95 linear interpolation:
     # rank = 0.95 * 4 = 3.8 -> 40 * 0.2 + 50 * 0.8 = 48.0
     assert pytest.approx(compute_percentile(vals, 95.0), rel=1e-4) == 48.0
-

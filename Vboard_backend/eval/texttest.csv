@@ -1,0 +1,17 @@
+id,mix,box_text,spoken_text,expected_action,expected_find,expected_which,expected_text,notes
+1,English,"","i will be late by ten minutes",insert,,last,"I will be late by ten minutes.",plain dictation
+2,Kannada,"","ನಾಳೆ ನಾನು ಆಫೀಸ್ಗೆ ಬರುವುದಿಲ್ಲ",insert,,last,"I will not come to the office tomorrow.",Kannada to English
+3,Kanglish,"Hi Team,","naale nanu office ge baralla health sariyilla",insert,,last,"Tomorrow I will not come to the office, I am not well.",Kanglish dictation
+4,English,"Hi Team,","i need leev tomorow becuse of feever",insert,,last,"I need leave tomorrow because of fever.",typo cleanup
+5,English,"Hello Ravi, the meeting is at 5 PM.","change Ravi to Raj",replace,Ravi,last,Raj,simple replace
+6,Kanglish,"Hello Ravi, the meeting is at 5 PM.","Ravi na Raj ge change maadu",replace,Ravi,last,Raj,Kanglish command
+7,English,"Ravi met Ravi's brother at the office.","change the first Ravi to Raj",replace,Ravi,first,Raj,which is first
+8,English,"Ravi called. Ravi will join. Tell Ravi to bring the file.","change all Ravi to Raj",replace,Ravi,all,Raj,which is all
+9,English,"Hello Ravi, the meeting is at 5 PM.","change Suresh to Raj",none,,,,word not in box so expect none
+10,English,"Hi Team, I am writing this email to let you know that I am not feeling very well today and because of that I will not be able to come to the office tomorrow.","make it shorter",rewrite,,last,"Hi Team, I am unwell and will not be in the office tomorrow.",shorter
+11,English,"need leave tomorrow fever","make it professional",rewrite,,last,"I have a fever and would like to request leave for tomorrow.",professional
+12,Kannada,"ನಾಳೆ ನಾನು ಆಫೀಸ್ಗೆ ಬರುವುದಿಲ್ಲ","English ge change maado",rewrite,,last,"I will not come to the office tomorrow.",translate
+13,Kannada,"Please send me the report as soon as possible because I need it urgently for the meeting.","ಇದನ್ನು ಚಿಕ್ಕದಾಗಿ ಮಾಡಿ",rewrite,,last,"Please send me the report urgently for the meeting.",Kannada command shorter
+14,English,"hello ravi how r u i will come tomorow","clean this up",rewrite,,last,"Hello Ravi, how are you? I will come tomorrow.",clean up
+15,English,"Thanks for your help.","I told him to change Ravi to Raj",insert,,last,"I told him to change Ravi to Raj.",looks like a command but is new text
+16,English,"Hi Team,","please make it shorter next time",insert,,last,"Please make it shorter next time.",looks like a command but is new text
