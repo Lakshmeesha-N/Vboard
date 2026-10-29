@@ -75,6 +75,10 @@ class Settings(BaseSettings):
         default="muse-spark-1.3",
         description="Default LLM model identifier",
     )
+    SPARK_REASONING_EFFORT: str = Field(
+        default="low",
+        description="Reasoning effort level for Spark Chat Completions",
+    )
 
     # Provider API keys (optional fallback / multi-provider support)
     SARVAM_API_KEY: Optional[str] = None

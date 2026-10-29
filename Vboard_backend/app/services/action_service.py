@@ -1,0 +1,249 @@
+import inspect
+import json
+import re
+from dataclasses import dataclass
+from typing import Any, Optional
+
+from loguru import logger
+
+from app.core.config import settings
+from app.core.exceptions import MetaApiError, RateLimitedError
+from app.services import llm_service
+
+SPARK_SYSTEM_PROMPT = (
+    "You are an AI assistant for a keyboard application. "
+    "Given the current text in the input box (<box>...</box>) and the "
+    "user's spoken instruction (<spoken>...</spoken>), determine the editing action. "
+    "Output must be a valid JSON object matching one of the following schemas:\n"
+    '1. Insert: {"type": "insert", "text": "<text to insert>"}\n'
+    '2. Replace: {"type": "replace", "find": "<target>", "text": "<replacement>"}\n'
+    '3. Rewrite: {"type": "rewrite", "text": "<full rewritten box text>"}\n'
+    "Ensure output text is cleanly formatted. Return only the JSON object."
+)
+
+ACTION_RESPONSE_FORMAT = {"type": "json_object"}
+
+
+@dataclass
+class Action:
+    """Editing action to apply to the input box."""
+
+    type: str  # "insert" | "replace" | "rewrite"
+    text: str
+    find: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class ActionResult:
+    """Action service result with execution metrics and fallback state."""
+
+    action: Optional[Action]
+    used_fallback: bool
+    fallback_reason: Optional[str]
+    elapsed_ms: float
+    prompt_tokens: int
+    completion_tokens: int
+    cached_tokens: int
+    reasoning_tokens: int
+
+
+def clean_text(text: str) -> str:
+    """Remove literal <box>, </box>, <spoken>, </spoken> tags (case-insensitive)."""
+    return re.sub(r"(?i)</?(?:box|spoken)>", "", text)
+
+
+def build_user_message(box: str, spoken: str) -> str:
+    """Build the exact XML-tagged user prompt."""
+    return f"<box>{box}</box>\n<spoken>{spoken}</spoken>"
+
+
+def parse_action(reply_text: str) -> Optional[Action]:
+    """Parse and validate JSON action reply, returning None on any schema violation."""
+    if not reply_text or not reply_text.strip():
+        return None
+
+    cleaned = reply_text.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+
+    try:
+        data = json.loads(cleaned)
+    except Exception:
+        return None
+
+    if not isinstance(data, dict):
+        return None
+
+    action_type = data.get("type")
+    if action_type not in ("insert", "replace", "rewrite"):
+        return None
+
+    text = data.get("text")
+    if not isinstance(text, str):
+        return None
+
+    find = data.get("find")
+    if action_type == "replace":
+        if not isinstance(find, str) or not find.strip():
+            return None
+        return Action(type="replace", text=text, find=find)
+
+    return Action(type=action_type, text=text)
+
+
+async def process(
+    spoken_text: str,
+    box_text: str,
+    reasoning_effort: Optional[str] = None,
+) -> ActionResult:
+    """
+    Process speech input against box text, determining editing action via Spark.
+
+    Args:
+        spoken_text: Transcribed voice text.
+        box_text: Existing text in the input box.
+        reasoning_effort: Optional reasoning effort override for Spark.
+
+    Returns:
+        ActionResult containing action, fallback flags, and numeric metrics.
+    """
+    # 2a. If spoken_text is empty or whitespace only: return empty_speech
+    if not spoken_text or not spoken_text.strip():
+        logger.info(
+            "Action result: elapsed_ms=0.00, prompt_tokens=0, completion_tokens=0, "
+            "cached_tokens=0, reasoning_tokens=0, action_type=None, "
+            "used_fallback=False, fallback_reason=empty_speech"
+        )
+        return ActionResult(
+            action=None,
+            used_fallback=False,
+            fallback_reason="empty_speech",
+            elapsed_ms=0.0,
+            prompt_tokens=0,
+            completion_tokens=0,
+            cached_tokens=0,
+            reasoning_tokens=0,
+        )
+
+    # 2b. Clean tags from both texts
+    cleaned_box = clean_text(box_text)
+    cleaned_spoken = clean_text(spoken_text)
+
+    # 2c. Build exact user message
+    user_message = build_user_message(cleaned_box, cleaned_spoken)
+
+    # 2d. Call Spark via llm_service
+    effort = (
+        reasoning_effort
+        if reasoning_effort is not None
+        else settings.SPARK_REASONING_EFFORT
+    )
+
+    try:
+        # Pass kwargs dynamically if accepted by signature or mock
+        sig = inspect.signature(llm_service.complete)
+        kwargs: dict[str, Any] = {}
+        has_var_kw = any(
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+        )
+        if "response_format" in sig.parameters or has_var_kw:
+            kwargs["response_format"] = ACTION_RESPONSE_FORMAT
+        if "reasoning_effort" in sig.parameters or has_var_kw:
+            kwargs["reasoning_effort"] = effort
+
+        reply = await llm_service.complete(
+            SPARK_SYSTEM_PROMPT,
+            user_message,
+            **kwargs,
+        )
+    except (RateLimitedError, MetaApiError):
+        # 2e. Catch ONLY RateLimitedError and MetaApiError -> spark_error fallback
+        action = Action(type="insert", text=spoken_text)
+        used_fallback = True
+        fallback_reason = "spark_error"
+        logger.info(
+            "Action result: elapsed_ms=0.00, prompt_tokens=0, completion_tokens=0, "
+            "cached_tokens=0, reasoning_tokens=0, action_type={}, "
+            "used_fallback={}, fallback_reason={}",
+            action.type,
+            used_fallback,
+            fallback_reason,
+        )
+        return ActionResult(
+            action=action,
+            used_fallback=used_fallback,
+            fallback_reason=fallback_reason,
+            elapsed_ms=0.0,
+            prompt_tokens=0,
+            completion_tokens=0,
+            cached_tokens=0,
+            reasoning_tokens=0,
+        )
+
+    elapsed_ms = reply.elapsed_ms
+    prompt_tokens = reply.prompt_tokens
+    completion_tokens = reply.completion_tokens
+    cached_tokens = reply.cached_tokens
+    reasoning_tokens = reply.reasoning_tokens
+
+    # 2f. Parse action reply
+    parsed = parse_action(reply.text)
+    if parsed is None:
+        action = Action(type="insert", text=spoken_text)
+        used_fallback = True
+        fallback_reason = "bad_reply"
+    # 2g. Empty box check for replace or rewrite
+    elif not box_text.strip() and parsed.type in ("replace", "rewrite"):
+        action = Action(type="insert", text=spoken_text)
+        used_fallback = True
+        fallback_reason = "not_allowed_empty_box"
+    # 2h. Replace reconciliation
+    elif parsed.type == "replace":
+        find_target = parsed.find or ""
+        if find_target in box_text:
+            action = parsed
+            used_fallback = False
+            fallback_reason = None
+        else:
+            match = re.search(re.escape(find_target), box_text, re.IGNORECASE)
+            if match:
+                parsed.find = match.group(0)
+                action = parsed
+                used_fallback = False
+                fallback_reason = None
+            else:
+                action = None
+                used_fallback = True
+                fallback_reason = "find_not_found"
+    # 2i. Normal valid action
+    else:
+        action = parsed
+        used_fallback = False
+        fallback_reason = None
+
+    action_type = action.type if action else None
+    logger.info(
+        "Action result: elapsed_ms={:.2f}, prompt_tokens={}, completion_tokens={}, "
+        "cached_tokens={}, reasoning_tokens={}, action_type={}, "
+        "used_fallback={}, fallback_reason={}",
+        elapsed_ms,
+        prompt_tokens,
+        completion_tokens,
+        cached_tokens,
+        reasoning_tokens,
+        action_type,
+        used_fallback,
+        fallback_reason,
+    )
+
+    return ActionResult(
+        action=action,
+        used_fallback=used_fallback,
+        fallback_reason=fallback_reason,
+        elapsed_ms=elapsed_ms,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        cached_tokens=cached_tokens,
+        reasoning_tokens=reasoning_tokens,
+    )
