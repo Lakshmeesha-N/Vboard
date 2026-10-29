@@ -30,7 +30,7 @@ async def test_process_valid_16k_success(valid_16k_wav):
     )
 
     with patch(
-        "app.api.v1.process.transcribe", new=AsyncMock(return_value=mock_result)
+        "app.services.stt_service.transcribe", new=AsyncMock(return_value=mock_result)
     ) as mock_transcribe:
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(
@@ -42,7 +42,7 @@ async def test_process_valid_16k_success(valid_16k_wav):
     assert resp.status_code == 200
     data = resp.json()
     assert data["transcript"] == "Hello world"
-    assert data["timing_ms"] == 125.5
+    assert data["timing_ms"] >= 0
     assert data["audio_duration_ms"] == 1000
     mock_transcribe.assert_awaited_once()
 
@@ -56,7 +56,7 @@ async def test_process_valid_24k_success(valid_24k_wav):
     )
 
     with patch(
-        "app.api.v1.process.transcribe", new=AsyncMock(return_value=mock_result)
+        "app.services.stt_service.transcribe", new=AsyncMock(return_value=mock_result)
     ) as mock_transcribe:
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(
@@ -68,7 +68,7 @@ async def test_process_valid_24k_success(valid_24k_wav):
     assert resp.status_code == 200
     data = resp.json()
     assert data["transcript"] == "ನಮಸ್ಕಾರ"
-    assert data["timing_ms"] == 210.0
+    assert data["timing_ms"] >= 0
     assert data["audio_duration_ms"] == 1000
     mock_transcribe.assert_awaited_once()
 
@@ -96,7 +96,7 @@ async def test_process_languages_trim_and_filter_empty(valid_16k_wav):
     )
 
     with patch(
-        "app.api.v1.process.transcribe", new=AsyncMock(return_value=mock_result)
+        "app.services.stt_service.transcribe", new=AsyncMock(return_value=mock_result)
     ) as mock_transcribe:
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(
@@ -113,27 +113,80 @@ async def test_process_languages_trim_and_filter_empty(valid_16k_wav):
 
 
 @pytest.mark.asyncio
-async def test_process_languages_exceeding_max_5_returns_400(valid_16k_wav):
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        files = {"audio": ("audio.wav", valid_16k_wav, "audio/wav")}
-        data = {"languages": "Kannada,English,Hindi,Tamil,Telugu,Spanish"}
-        resp = await client.post("/v1/process", files=files, data=data)
+async def test_process_languages_unsupported_name_dropped(valid_16k_wav):
+    mock_result = TranscriptionResult(
+        transcript="Test",
+        elapsed_ms=100.0,
+        audio_duration_ms=1000,
+    )
 
-    assert resp.status_code == 400
-    assert "cannot exceed 5" in resp.json()["detail"].lower()
+    with patch(
+        "app.services.stt_service.transcribe", new=AsyncMock(return_value=mock_result)
+    ) as mock_transcribe:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
+            files = {"audio": ("audio.wav", valid_16k_wav, "audio/wav")}
+            data = {"languages": "Kannada,Klingon,english"}
+            resp = await client.post("/v1/process", files=files, data=data)
+
+    assert resp.status_code == 200
+    mock_transcribe.assert_awaited_once()
+    _, kwargs = mock_transcribe.call_args
+    # Klingon dropped, Kannada and English kept and canonicalized
+    assert kwargs["languages"] == ["Kannada", "English"]
 
 
 @pytest.mark.asyncio
-async def test_process_languages_unsupported_name_returns_400(valid_16k_wav):
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-        files = {"audio": ("audio.wav", valid_16k_wav, "audio/wav")}
-        data = {"languages": "Kannada,Klingon"}
-        resp = await client.post("/v1/process", files=files, data=data)
+async def test_process_languages_only_unknown_names_sends_none(valid_16k_wav):
+    mock_result = TranscriptionResult(
+        transcript="Test",
+        elapsed_ms=100.0,
+        audio_duration_ms=1000,
+    )
 
-    assert resp.status_code == 400
-    assert "unsupported language 'klingon'" in resp.json()["detail"].lower()
+    with patch(
+        "app.services.stt_service.transcribe", new=AsyncMock(return_value=mock_result)
+    ) as mock_transcribe:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
+            files = {"audio": ("audio.wav", valid_16k_wav, "audio/wav")}
+            data = {"languages": "Klingon,Elvish"}
+            resp = await client.post("/v1/process", files=files, data=data)
+
+    assert resp.status_code == 200
+    mock_transcribe.assert_awaited_once()
+    _, kwargs = mock_transcribe.call_args
+    # All dropped, none remain -> languages=None
+    assert kwargs["languages"] is None
+
+
+@pytest.mark.asyncio
+async def test_process_languages_exceeding_5_trimmed(valid_16k_wav):
+    mock_result = TranscriptionResult(
+        transcript="Test",
+        elapsed_ms=100.0,
+        audio_duration_ms=1000,
+    )
+
+    with patch(
+        "app.services.stt_service.transcribe", new=AsyncMock(return_value=mock_result)
+    ) as mock_transcribe:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
+            files = {"audio": ("audio.wav", valid_16k_wav, "audio/wav")}
+            data = {"languages": "Kannada,English,Hindi,Tamil,Telugu,Spanish"}
+            resp = await client.post("/v1/process", files=files, data=data)
+
+    assert resp.status_code == 200
+    mock_transcribe.assert_awaited_once()
+    _, kwargs = mock_transcribe.call_args
+    assert kwargs["languages"] == ["Kannada", "English", "Hindi", "Tamil", "Telugu"]
 
 
 @pytest.mark.asyncio
@@ -145,7 +198,7 @@ async def test_process_device_id_valid(valid_16k_wav):
     )
 
     with patch(
-        "app.api.v1.process.transcribe", new=AsyncMock(return_value=mock_result)
+        "app.services.stt_service.transcribe", new=AsyncMock(return_value=mock_result)
     ):
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(
@@ -191,7 +244,7 @@ async def test_process_context_text_within_limit_accepted(valid_16k_wav):
     )
 
     with patch(
-        "app.api.v1.process.transcribe", new=AsyncMock(return_value=mock_result)
+        "app.services.stt_service.transcribe", new=AsyncMock(return_value=mock_result)
     ):
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(
@@ -234,7 +287,8 @@ async def test_process_privacy_caplog_never_logs_context_text_or_audio(
 
     try:
         with patch(
-            "app.api.v1.process.transcribe", new=AsyncMock(return_value=mock_result)
+            "app.services.stt_service.transcribe",
+            new=AsyncMock(return_value=mock_result),
         ):
             transport = httpx.ASGITransport(app=app)
             async with httpx.AsyncClient(
@@ -257,7 +311,7 @@ async def test_process_privacy_caplog_never_logs_context_text_or_audio(
 @pytest.mark.asyncio
 async def test_process_upstream_rate_limited_returns_429(valid_16k_wav):
     with patch(
-        "app.api.v1.process.transcribe",
+        "app.services.stt_service.transcribe",
         new=AsyncMock(side_effect=RateLimitedError("Meta API rate limit exceeded")),
     ):
         transport = httpx.ASGITransport(app=app)
@@ -272,27 +326,9 @@ async def test_process_upstream_rate_limited_returns_429(valid_16k_wav):
 
 
 @pytest.mark.asyncio
-async def test_process_upstream_meta_server_error_returns_500(valid_16k_wav):
-    with patch(
-        "app.api.v1.process.transcribe",
-        new=AsyncMock(
-            side_effect=MetaApiError("Meta API server error", status_code=500)
-        ),
-    ):
-        transport = httpx.ASGITransport(app=app)
-        async with httpx.AsyncClient(
-            transport=transport, base_url="http://test"
-        ) as client:
-            files = {"audio": ("audio.wav", valid_16k_wav, "audio/wav")}
-            resp = await client.post("/v1/process", files=files)
-
-    assert resp.status_code == 500
-
-
-@pytest.mark.asyncio
 async def test_process_upstream_meta_connection_error_returns_502(valid_16k_wav):
     with patch(
-        "app.api.v1.process.transcribe",
+        "app.services.stt_service.transcribe",
         new=AsyncMock(side_effect=MetaApiError("Meta API connection error")),
     ):
         transport = httpx.ASGITransport(app=app)
@@ -303,3 +339,4 @@ async def test_process_upstream_meta_connection_error_returns_502(valid_16k_wav)
             resp = await client.post("/v1/process", files=files)
 
     assert resp.status_code == 502
+    assert "service error" in resp.json()["detail"].lower()

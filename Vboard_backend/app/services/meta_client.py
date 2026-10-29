@@ -1,5 +1,7 @@
 from typing import Optional
+
 import httpx
+
 from app.core.config import settings
 
 _client: Optional[httpx.AsyncClient] = None

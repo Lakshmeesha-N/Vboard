@@ -1,5 +1,6 @@
 import httpx
 import pytest
+
 from app.main import app, lifespan
 from app.services.meta_client import get_meta_client
 

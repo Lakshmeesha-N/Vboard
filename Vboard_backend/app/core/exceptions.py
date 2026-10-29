@@ -4,6 +4,18 @@ class VboardError(Exception):
     pass
 
 
+class InvalidRequestError(VboardError):
+    """Raised when request parameters or payload are invalid (400)."""
+
+    def __init__(
+        self,
+        message: str = "Invalid request parameter",
+        status_code: int = 400,
+    ):
+        self.status_code = status_code
+        super().__init__(message)
+
+
 class InvalidAudioError(VboardError):
     """Raised when audio payload is invalid, unsupported, or too large (400, 413)."""
 
