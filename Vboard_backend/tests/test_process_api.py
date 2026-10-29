@@ -340,3 +340,29 @@ async def test_process_upstream_meta_connection_error_returns_502(valid_16k_wav)
 
     assert resp.status_code == 502
     assert "service error" in resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_process_unhandled_exception_returns_500(valid_16k_wav, caplog):
+    handler_id = logger.add(caplog.handler, format="{message}")
+
+    try:
+        with patch(
+            "app.services.pipeline.run",
+            new=AsyncMock(side_effect=RuntimeError("Unexpected pipeline failure")),
+        ):
+            transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+            async with httpx.AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as client:
+                files = {"audio": ("audio.wav", valid_16k_wav, "audio/wav")}
+                resp = await client.post("/v1/process", files=files)
+
+        assert resp.status_code == 500
+        assert resp.json()["detail"] == "Internal server error"
+        # Verify log contains ONLY the exception class name, not any sensitive details
+        assert "Unhandled error: RuntimeError" in caplog.text
+        assert "Unexpected pipeline failure" not in caplog.text
+    finally:
+        logger.remove(handler_id)
+

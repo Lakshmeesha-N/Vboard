@@ -4,7 +4,19 @@ class VboardError(Exception):
     pass
 
 
-class InvalidRequestError(VboardError):
+class AppError(VboardError):
+    """Base application error with a safe client-facing message and HTTP status code."""
+
+    def __init__(
+        self,
+        message: str = "Application error",
+        status_code: int = 400,
+    ):
+        self.status_code = status_code
+        super().__init__(message)
+
+
+class InvalidRequestError(AppError):
     """Raised when request parameters or payload are invalid (400)."""
 
     def __init__(
@@ -12,11 +24,10 @@ class InvalidRequestError(VboardError):
         message: str = "Invalid request parameter",
         status_code: int = 400,
     ):
-        self.status_code = status_code
-        super().__init__(message)
+        super().__init__(message=message, status_code=status_code)
 
 
-class InvalidAudioError(VboardError):
+class InvalidAudioError(AppError):
     """Raised when audio payload is invalid, unsupported, or too large (400, 413)."""
 
     def __init__(
@@ -24,15 +35,18 @@ class InvalidAudioError(VboardError):
         message: str = "Invalid or unsupported audio payload",
         status_code: int = 400,
     ):
-        self.status_code = status_code
-        super().__init__(message)
+        super().__init__(message=message, status_code=status_code)
 
 
-class RateLimitedError(VboardError):
+class RateLimitedError(AppError):
     """Raised when Meta API rate limit is encountered (HTTP 429)."""
 
-    def __init__(self, message: str = "Meta API rate limit exceeded"):
-        super().__init__(message)
+    def __init__(
+        self,
+        message: str = "Meta API rate limit exceeded",
+        status_code: int = 429,
+    ):
+        super().__init__(message=message, status_code=status_code)
 
 
 class MetaApiError(VboardError):
