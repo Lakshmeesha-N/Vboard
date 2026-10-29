@@ -42,6 +42,34 @@ class Settings(BaseSettings):
         description="Default voice/ASR model identifier",
     )
 
+    # Audio Guardrail settings
+    MAX_AUDIO_BYTES: int = Field(
+        default=5 * 1024 * 1024,
+        description="Maximum allowed audio upload size in bytes (5 MB)",
+    )
+    MIN_AUDIO_DURATION_S: float = Field(
+        default=0.3,
+        description="Minimum allowed audio duration in seconds",
+    )
+    MAX_AUDIO_DURATION_S: float = Field(
+        default=60.0,
+        description="Maximum allowed audio duration in seconds",
+    )
+    SILENCE_RMS_THRESHOLD: float = Field(
+        default=50.0,
+        description="RMS amplitude threshold below which audio is treated as silent",
+    )
+
+    # Request validation settings
+    MAX_CONTEXT_TEXT_LENGTH: int = Field(
+        default=10000,
+        description="Maximum length of context_text string in characters",
+    )
+    MAX_LANGUAGES_COUNT: int = Field(
+        default=5,
+        description="Maximum number of languages allowed in languageBias",
+    )
+
     # LLM model defaults
     DEFAULT_LLM_MODEL: str = Field(
         default="meta-llama/Meta-Llama-3.1-8B-Instruct",

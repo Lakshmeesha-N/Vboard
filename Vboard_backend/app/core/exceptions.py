@@ -1,12 +1,18 @@
 class VboardError(Exception):
     """Base exception for Vboard application errors."""
+
     pass
 
 
 class InvalidAudioError(VboardError):
     """Raised when audio payload is invalid, unsupported, or too large (400, 413)."""
 
-    def __init__(self, message: str = "Invalid or unsupported audio payload"):
+    def __init__(
+        self,
+        message: str = "Invalid or unsupported audio payload",
+        status_code: int = 400,
+    ):
+        self.status_code = status_code
         super().__init__(message)
 
 

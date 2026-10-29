@@ -1,6 +1,9 @@
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
-from app.services.meta_client import init_meta_client, close_meta_client
+
+from app.api.v1.process import router as process_router
+from app.services.meta_client import close_meta_client, init_meta_client
 
 
 @asynccontextmanager
@@ -14,3 +17,5 @@ app = FastAPI(
     title="Vboard Backend",
     lifespan=lifespan,
 )
+
+app.include_router(process_router, prefix="/v1")
