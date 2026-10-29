@@ -366,3 +366,59 @@ async def test_process_unhandled_exception_returns_500(valid_16k_wav, caplog):
     finally:
         logger.remove(handler_id)
 
+
+@pytest.mark.asyncio
+async def test_process_timings_included_when_debug_true(valid_16k_wav):
+    mock_result = TranscriptionResult(
+        transcript="Debug check",
+        elapsed_ms=50.0,
+        audio_duration_ms=1000,
+    )
+
+    with patch("app.core.config.settings.DEBUG", True):
+        with patch(
+            "app.services.stt_service.transcribe",
+            new=AsyncMock(return_value=mock_result),
+        ):
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as client:
+                files = {"audio": ("audio.wav", valid_16k_wav, "audio/wav")}
+                resp = await client.post("/v1/process", files=files)
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "timings_ms" in data
+    assert data["timings_ms"] is not None
+    assert "read_ms" in data["timings_ms"]
+    assert "guardrail_ms" in data["timings_ms"]
+    assert "stt_ms" in data["timings_ms"]
+    assert "total_ms" in data["timings_ms"]
+
+
+@pytest.mark.asyncio
+async def test_process_timings_omitted_when_debug_false(valid_16k_wav):
+    mock_result = TranscriptionResult(
+        transcript="Debug check",
+        elapsed_ms=50.0,
+        audio_duration_ms=1000,
+    )
+
+    with patch("app.core.config.settings.DEBUG", False):
+        with patch(
+            "app.services.stt_service.transcribe",
+            new=AsyncMock(return_value=mock_result),
+        ):
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as client:
+                files = {"audio": ("audio.wav", valid_16k_wav, "audio/wav")}
+                resp = await client.post("/v1/process", files=files)
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data.get("timings_ms") is None
+
+

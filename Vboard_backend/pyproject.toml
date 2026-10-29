@@ -22,6 +22,7 @@ dependencies = [
 
 [project.scripts]
 eval-audio = "scripts.eval_audio:main"
+eval-endpoint = "scripts.eval_endpoint:main"
 
 [project.optional-dependencies]
 dev = [

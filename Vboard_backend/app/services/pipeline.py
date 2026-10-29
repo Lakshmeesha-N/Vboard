@@ -18,6 +18,7 @@ class PipelineResult:
 async def run(
     wav_bytes: bytes,
     languages: Optional[list[str]] = None,
+    read_ms: float = 0.0,
 ) -> PipelineResult:
     """
     Execute speech processing pipeline: guardrail -> STT (later Spark).
@@ -37,9 +38,11 @@ async def run(
     stt_res = await stt_service.transcribe(wav_bytes, languages=languages)
     stt_ms = (time.perf_counter() - stt_start) * 1000.0
 
-    total_ms = (time.perf_counter() - total_start) * 1000.0
+    pipeline_elapsed_ms = (time.perf_counter() - total_start) * 1000.0
+    total_ms = pipeline_elapsed_ms + read_ms
 
     timings = {
+        "read_ms": round(read_ms, 2),
         "guardrail_ms": round(guardrail_ms, 2),
         "stt_ms": round(stt_ms, 2),
         "total_ms": round(total_ms, 2),
@@ -50,4 +53,3 @@ async def run(
         audio_duration_ms=stt_res.audio_duration_ms,
         timings_ms=timings,
     )
-
