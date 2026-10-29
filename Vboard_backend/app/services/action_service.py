@@ -8,10 +8,8 @@ from loguru import logger
 from app.core.config import settings
 from app.core.exceptions import MetaApiError, RateLimitedError
 from app.prompts import SPARK_SYSTEM_PROMPT
-from app.schemas.actions import Action
+from app.schemas.actions import ACTION_RESPONSE_FORMAT, Action, parse_action
 from app.services import llm_service
-
-ACTION_RESPONSE_FORMAT = {"type": "json_object"}
 
 
 @dataclass(frozen=True)
@@ -36,55 +34,6 @@ def clean_text(text: str) -> str:
 def build_user_message(box: str, spoken: str) -> str:
     """Build the exact XML-tagged user prompt."""
     return f"<box>{box}</box>\n<spoken>{spoken}</spoken>"
-
-
-def parse_action(reply_text: str) -> Optional[Action]:
-    """
-    Parse and validate JSON action reply strictly.
-
-    Requires 'action', 'text', 'find'. Does NOT accept 'type'.
-    'which' defaults to 'last' only when omitted.
-    """
-    if not reply_text or not reply_text.strip():
-        return None
-
-    cleaned = reply_text.strip()
-    if cleaned.startswith("```"):
-        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
-        cleaned = re.sub(r"\s*```$", "", cleaned)
-
-    try:
-        data = json.loads(cleaned)
-    except Exception:
-        return None
-
-    if not isinstance(data, dict):
-        return None
-
-    # Strict requirement: Do not accept "type", must have "action"
-    if "type" in data and "action" not in data:
-        return None
-
-    action_name = data.get("action")
-    if action_name not in ("insert", "replace", "rewrite"):
-        return None
-
-    text = data.get("text")
-    if not isinstance(text, str):
-        return None
-
-    find = data.get("find")
-    if not isinstance(find, str):
-        return None
-
-    which = data.get("which", "last")
-    if not isinstance(which, str) or not which.strip():
-        which = "last"
-
-    if action_name == "replace" and not find.strip():
-        return None
-
-    return Action(action=action_name, text=text, find=find, which=which)
 
 
 async def process(

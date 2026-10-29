@@ -9,6 +9,7 @@ from app.services.action_service import (
     SPARK_SYSTEM_PROMPT,
     Action,
     ActionResult,
+    parse_action,
     process,
 )
 from app.services.llm_service import LLMResult
@@ -105,7 +106,6 @@ async def test_valid_actions_pass_through_without_fallback(
     assert res.fallback_reason is None
     assert res.action is not None
     assert res.action.action == expected_action
-    assert res.action.type == expected_action
     assert res.action.text == expected_text
     assert res.action.find == expected_find
     assert res.action.which == expected_which
@@ -440,3 +440,127 @@ async def test_caplog_zero_text_leak_privacy(caplog):
         assert "action_type=insert" in caplog.text
     finally:
         logger.remove(handler_id)
+
+
+def test_which_validation_and_normalization():
+    # 1. Invalid which for replace is rejected
+    invalid_replace = json.dumps(
+        {"action": "replace", "find": "old", "text": "new", "which": "middle"}
+    )
+    assert parse_action(invalid_replace) is None
+
+    # 2. Valid which for replace is preserved
+    for w in ("first", "last", "all"):
+        valid_replace = json.dumps(
+            {"action": "replace", "find": "old", "text": "new", "which": w}
+        )
+        parsed = parse_action(valid_replace)
+        assert parsed is not None
+        assert parsed.which == w
+
+    # 3. Missing which for replace defaults to "last"
+    missing_which_replace = json.dumps(
+        {"action": "replace", "find": "old", "text": "new"}
+    )
+    parsed = parse_action(missing_which_replace)
+    assert parsed is not None
+    assert parsed.which == "last"
+
+    # 4. For insert and rewrite, which is ignored and normalized to "last"
+    for w in ("first", "all", "invalid_which", "middle"):
+        ins = json.dumps(
+            {"action": "insert", "text": "hello", "find": "", "which": w}
+        )
+        parsed_ins = parse_action(ins)
+        assert parsed_ins is not None
+        assert parsed_ins.which == "last"
+
+        rew = json.dumps(
+            {"action": "rewrite", "text": "hello world", "find": "", "which": w}
+        )
+        parsed_rew = parse_action(rew)
+        assert parsed_rew is not None
+        assert parsed_rew.which == "last"
+
+
+@pytest.mark.parametrize("empty_val", ["", "   ", "\t\n"])
+def test_empty_text_for_insert_and_rewrite_rejected(empty_val):
+    bad_insert = json.dumps(
+        {"action": "insert", "text": empty_val, "find": "", "which": "last"}
+    )
+    assert parse_action(bad_insert) is None
+
+    bad_rewrite = json.dumps(
+        {"action": "rewrite", "text": empty_val, "find": "", "which": "last"}
+    )
+    assert parse_action(bad_rewrite) is None
+
+
+def test_empty_text_replace_allowed():
+    # Replace with non-empty find and empty text is allowed (e.g. deletion)
+    empty_text_replace = json.dumps(
+        {"action": "replace", "find": "target", "text": "", "which": "first"}
+    )
+    parsed = parse_action(empty_text_replace)
+    assert parsed is not None
+    assert parsed.action == "replace"
+    assert parsed.find == "target"
+    assert parsed.text == ""
+    assert parsed.which == "first"
+
+
+@pytest.mark.asyncio
+async def test_empty_text_replace_process_integration():
+    mock_complete = AsyncMock(
+        return_value=make_mock_reply(
+            json.dumps(
+                {
+                    "action": "replace",
+                    "find": "delete me",
+                    "text": "",
+                    "which": "last",
+                }
+            )
+        )
+    )
+
+    with patch("app.services.action_service.llm_service.complete", mock_complete):
+        res = await process(
+            spoken_text="delete delete me",
+            box_text="Please delete me now",
+        )
+
+    assert res.used_fallback is False
+    assert res.fallback_reason is None
+    assert res.action is not None
+    assert res.action.action == "replace"
+    assert res.action.find == "delete me"
+    assert res.action.text == ""
+    assert res.action.which == "last"
+
+
+def test_type_only_reply_rejected_and_extra_keys_ignored():
+    # Reply with only "type" instead of "action" is rejected
+    type_only = json.dumps(
+        {"type": "insert", "text": "hello", "find": "", "which": "last"}
+    )
+    assert parse_action(type_only) is None
+
+    # Reply with both "action" and extra keys (including "type") is accepted with extra keys ignored
+    with_extras = json.dumps(
+        {
+            "action": "insert",
+            "type": "insert",
+            "text": "hello",
+            "find": "",
+            "which": "last",
+            "unexpected_field": 42,
+        }
+    )
+    parsed = parse_action(with_extras)
+    assert parsed is not None
+    assert parsed.action == "insert"
+    assert parsed.text == "hello"
+    assert parsed.find == ""
+    assert parsed.which == "last"
+

@@ -53,7 +53,7 @@ async def process_audio(
 
     # Always log timing numbers with device_id (numbers and reason codes only)
     t = result.timings_ms
-    action_type = result.action.type if result.action else "none"
+    action_type = result.action.action if result.action else "none"
     logger.info(
         "Timings for device {}: read_ms={:.2f}, guardrail_ms={:.2f}, "
         "stt_ms={:.2f}, spark_ms={:.2f}, total_ms={:.2f}, "
