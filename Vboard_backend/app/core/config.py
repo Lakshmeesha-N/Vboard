@@ -72,7 +72,7 @@ class Settings(BaseSettings):
 
     # LLM model defaults
     DEFAULT_LLM_MODEL: str = Field(
-        default="meta-llama/Meta-Llama-3.1-8B-Instruct",
+        default="muse-spark-1.3",
         description="Default LLM model identifier",
     )
 
