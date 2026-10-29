@@ -410,3 +410,16 @@ async def test_run_evaluation_mocked(tmp_path: Path):
         assert mock_close.call_count == 1
         # 1 warm-up + 2 rows = 3 calls
         assert mock_process.call_count == 3
+
+
+def test_eval_llm_parse_args_reasoning_effort_choices():
+    from scripts.eval_llm import parse_args
+
+    # Valid choices
+    for choice in ["minimal", "low", "medium", "high", "xhigh", "max"]:
+        args = parse_args(["--reasoning-effort", choice])
+        assert args.reasoning_effort == choice
+
+    # Invalid choice raises SystemExit from argparse
+    with pytest.raises(SystemExit):
+        parse_args(["--reasoning-effort", "invalid_choice"])

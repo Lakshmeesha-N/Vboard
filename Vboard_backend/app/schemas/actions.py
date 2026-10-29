@@ -14,4 +14,3 @@ class Action:
     def type(self) -> str:
         """Compatibility property mapping action to type."""
         return self.action
-

@@ -470,7 +470,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         "--reasoning-effort",
         type=str,
         default=None,
-        choices=["none", "low", "medium", "high"],
+        choices=["minimal", "low", "medium", "high", "xhigh", "max"],
         help="Override SPARK_REASONING_EFFORT setting",
     )
     parser.add_argument(

@@ -45,10 +45,34 @@ async def test_complete_success_fills_dataclass_and_checks_order():
     assert mock_client.chat.completions.create.call_count == 1
     call_kwargs = mock_client.chat.completions.create.call_args.kwargs
     assert call_kwargs["model"] == "muse-spark-1.3"
+    assert "response_format" not in call_kwargs
+    assert "reasoning_effort" not in call_kwargs
     messages = call_kwargs["messages"]
     assert len(messages) == 2
     assert messages[0] == {"role": "system", "content": "You are a helpful assistant."}
     assert messages[1] == {"role": "user", "content": "Convert this speech into text."}
+
+
+@pytest.mark.asyncio
+async def test_complete_passes_optional_parameters_when_set():
+    mock_client = AsyncMock()
+    mock_response = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))],
+        usage=None,
+    )
+    mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+    with patch("app.services.llm_service.get_llm_client", return_value=mock_client):
+        await complete(
+            system_prompt="sys",
+            user_text="usr",
+            response_format={"type": "json_object"},
+            reasoning_effort="minimal",
+        )
+
+    call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+    assert call_kwargs["response_format"] == {"type": "json_object"}
+    assert call_kwargs["reasoning_effort"] == "minimal"
 
 
 @pytest.mark.asyncio

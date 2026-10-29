@@ -5,6 +5,7 @@ import pytest
 
 from app.core.exceptions import MetaApiError, RateLimitedError
 from app.services.action_service import (
+    ACTION_RESPONSE_FORMAT,
     SPARK_SYSTEM_PROMPT,
     Action,
     ActionResult,
@@ -373,6 +374,36 @@ async def test_spark_call_has_system_prompt_first_and_user_message_last():
     args = mock_complete.call_args.args
     assert args[0] == SPARK_SYSTEM_PROMPT
     assert "<box>my box text</box>\n<spoken>my spoken text</spoken>" == args[1]
+    kwargs = mock_complete.call_args.kwargs
+    assert kwargs["response_format"] == ACTION_RESPONSE_FORMAT
+    assert kwargs["reasoning_effort"] == "minimal"
+
+
+@pytest.mark.asyncio
+async def test_spark_call_forwards_explicit_reasoning_effort():
+    mock_complete = AsyncMock(
+        return_value=make_mock_reply(
+            json.dumps(
+                {
+                    "action": "insert",
+                    "text": "ok",
+                    "find": "",
+                    "which": "last",
+                }
+            )
+        )
+    )
+
+    with patch("app.services.action_service.llm_service.complete", mock_complete):
+        await process(
+            spoken_text="hello",
+            box_text="",
+            reasoning_effort="high",
+        )
+
+    mock_complete.assert_awaited_once()
+    kwargs = mock_complete.call_args.kwargs
+    assert kwargs["reasoning_effort"] == "high"
 
 
 @pytest.mark.asyncio

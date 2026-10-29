@@ -76,7 +76,7 @@ class Settings(BaseSettings):
         description="Default LLM model identifier",
     )
     SPARK_REASONING_EFFORT: str = Field(
-        default="low",
+        default="minimal",
         description="Reasoning effort level for Spark Chat Completions",
     )
 

@@ -1,8 +1,7 @@
-import inspect
 import json
 import re
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Optional
 
 from loguru import logger
 
@@ -137,21 +136,11 @@ async def process(
     )
 
     try:
-        # Pass kwargs dynamically if accepted by signature or mock
-        sig = inspect.signature(llm_service.complete)
-        kwargs: dict[str, Any] = {}
-        has_var_kw = any(
-            p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
-        )
-        if "response_format" in sig.parameters or has_var_kw:
-            kwargs["response_format"] = ACTION_RESPONSE_FORMAT
-        if "reasoning_effort" in sig.parameters or has_var_kw:
-            kwargs["reasoning_effort"] = effort
-
         reply = await llm_service.complete(
             SPARK_SYSTEM_PROMPT,
             user_message,
-            **kwargs,
+            response_format=ACTION_RESPONSE_FORMAT,
+            reasoning_effort=effort,
         )
     except (RateLimitedError, MetaApiError):
         # 2e. Catch ONLY RateLimitedError and MetaApiError -> spark_error fallback

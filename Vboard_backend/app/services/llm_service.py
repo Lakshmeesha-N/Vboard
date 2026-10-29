@@ -1,6 +1,6 @@
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 import openai
 from loguru import logger
@@ -33,13 +33,20 @@ def _extract_usage_field(obj: Any, field_name: str) -> int:
     return int(val) if val is not None else 0
 
 
-async def complete(system_prompt: str, user_text: str) -> LLMResult:
+async def complete(
+    system_prompt: str,
+    user_text: str,
+    response_format: Optional[dict[str, Any]] = None,
+    reasoning_effort: Optional[str] = None,
+) -> LLMResult:
     """
     Execute a chat completion call using the shared Meta LLM client.
 
     Args:
         system_prompt: System directive instructions.
         user_text: User message input.
+        response_format: Optional structured output format constraint.
+        reasoning_effort: Optional reasoning effort level.
 
     Returns:
         LLMResult containing response text, elapsed milliseconds, and token metrics.
@@ -58,11 +65,17 @@ async def complete(system_prompt: str, user_text: str) -> LLMResult:
 
     start_time = time.perf_counter()
 
+    call_kwargs: dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+    }
+    if response_format is not None:
+        call_kwargs["response_format"] = response_format
+    if reasoning_effort is not None:
+        call_kwargs["reasoning_effort"] = reasoning_effort
+
     try:
-        response = await client.chat.completions.create(
-            model=model,
-            messages=messages,
-        )
+        response = await client.chat.completions.create(**call_kwargs)
     except openai.RateLimitError:
         raise RateLimitedError("Meta API rate limit exceeded") from None
     except (openai.APITimeoutError, openai.APIConnectionError):
