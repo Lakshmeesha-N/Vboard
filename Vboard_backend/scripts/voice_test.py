@@ -286,6 +286,7 @@ class VoiceTestApp:
             return
 
         resp_data = res.json()
+        transcript = resp_data.get("transcript", "")
         action = resp_data.get("action")
         used_fallback = resp_data.get("used_fallback", False)
         note = resp_data.get("note")
@@ -297,9 +298,10 @@ class VoiceTestApp:
 
         action_type = action.get("action") if action else "null"
         print("--------------------------------------------------")
-        print(f"Action:        {action_type}")
-        print(f"Used Fallback: {used_fallback}")
-        print(f"Note:          {note or 'none'}")
+        print(f"STT Transcript: \"{transcript}\"")
+        print(f"Action:         {action_type}")
+        print(f"Used Fallback:  {used_fallback}")
+        print(f"Note:           {note or 'none'}")
         if timings:
             print(
                 f"Timings:       read={timings.get('read_ms', 0):.1f}ms | "

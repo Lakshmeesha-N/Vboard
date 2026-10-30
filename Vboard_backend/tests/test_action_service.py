@@ -546,7 +546,8 @@ def test_type_only_reply_rejected_and_extra_keys_ignored():
     )
     assert parse_action(type_only) is None
 
-    # Reply with both "action" and extra keys (including "type") is accepted with extra keys ignored
+    # Reply with both "action" and extra keys (including "type") is accepted
+    # with extra keys ignored
     with_extras = json.dumps(
         {
             "action": "insert",
