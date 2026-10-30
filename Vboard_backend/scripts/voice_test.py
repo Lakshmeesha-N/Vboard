@@ -9,40 +9,87 @@ from typing import Any, Optional
 import httpx
 
 ALLOWED_RATES = (16000, 24000)
-_FUNCTION_KEYS = {f"f{i}" for i in range(1, 13)}
-_LETTERS = set("abcdefghijklmnopqrstuvwxyz")
+
+# Non-typing keys safe for hold-to-record in a terminal.
+# Modifier keys (ctrl, shift, alt) and special keys — never type characters.
+_MODIFIER_KEYS = {
+    "ctrl",
+    "ctrl_l",
+    "ctrl_r",
+    "shift",
+    "shift_l",
+    "shift_r",
+    "alt",
+    "alt_l",
+    "alt_r",
+    "scroll_lock",
+    "pause",
+}
 
 
-def parse_key(raw: str):
+def parse_key(raw: str) -> tuple[str, ...]:
     """
-    Parse a key string into a (modifier, key_char) tuple.
+    Parse --key into a tuple of key names.
 
-    Accepted formats:
-      shift+v       -> ("shift", "v")
-      shift+f9      -> ("shift", "f9")
-      f9            -> (None, "f9")
+    Accepted formats (case-insensitive):
+      ctrl_r              -> single modifier key (default: Right Ctrl)
+      shift_r             -> single modifier key (Right Shift)
+      ctrl+shift          -> combo of two modifier keys
+      scroll_lock / pause -> non-character special keys
 
-    Returns (modifier_or_None, key_str) or raises ValueError.
+    Returns a tuple of one or two lowercased key name strings.
+    Raises ValueError with a clear message on invalid input.
     """
     raw = raw.strip().lower()
-    if "+" in raw:
-        parts = raw.split("+", 1)
-        modifier, key_part = parts[0].strip(), parts[1].strip()
-        if modifier != "shift":
-            raise ValueError(f"Only 'shift' modifier is supported, got '{modifier}'")
-        if key_part not in _FUNCTION_KEYS and key_part not in _LETTERS:
+    parts = [p.strip() for p in raw.split("+")]
+    if not parts or any(not p for p in parts):
+        raise ValueError("Key cannot be empty.")
+    for p in parts:
+        if p not in _MODIFIER_KEYS:
+            valid = ", ".join(sorted(_MODIFIER_KEYS))
             raise ValueError(
-                f"Key '{key_part}' after 'shift+' must be a letter (a-z) "
-                "or function key (f1-f12)"
+                f"Key '{p}' is not supported. Choose from: {valid}\n"
+                "Do NOT use letter keys or function keys — "
+                "they type into or interfere with the terminal/system."
             )
-        return ("shift", key_part)
-    else:
-        if raw not in _FUNCTION_KEYS:
-            raise ValueError(
-                f"Bare key '{raw}' must be a function key (f1-f12). "
-                "For letter keys, use shift+<letter> (e.g. shift+v)"
-            )
-        return (None, raw)
+    if len(parts) > 2:
+        raise ValueError("Maximum two keys in a combo (e.g. ctrl+shift).")
+    return tuple(parts)
+
+
+def resolve_pynput_keys(
+    key_tuple: tuple[str, ...], keyboard_module: Any
+) -> list[set[Any]]:
+    """
+    Map parsed key names to sets of pynput.keyboard.Key objects.
+    Each element in the returned list corresponds to a required slot in a combo.
+    """
+    key_cls = keyboard_module.Key
+    mapping = {
+        "ctrl": {key_cls.ctrl, key_cls.ctrl_l, key_cls.ctrl_r},
+        "ctrl_l": {key_cls.ctrl_l, key_cls.ctrl},
+        "ctrl_r": {key_cls.ctrl_r},
+        "shift": {key_cls.shift, key_cls.shift_r},
+        "shift_l": {key_cls.shift},
+        "shift_r": {key_cls.shift_r},
+        "alt": {
+            key_cls.alt,
+            key_cls.alt_l,
+            key_cls.alt_gr,
+            getattr(key_cls, "alt_r", key_cls.alt_gr),
+        },
+        "alt_l": {key_cls.alt_l, key_cls.alt},
+        "alt_r": {key_cls.alt_gr, getattr(key_cls, "alt_r", key_cls.alt_gr)},
+        "scroll_lock": {key_cls.scroll_lock},
+        "pause": {key_cls.pause},
+    }
+    slots = []
+    for k in key_tuple:
+        target_keys = mapping.get(k)
+        if not target_keys:
+            raise ValueError(f"Unknown key '{k}'")
+        slots.append({target for target in target_keys if target is not None})
+    return slots
 
 
 def apply_action(box: str, action: Optional[dict[str, Any]]) -> str:
@@ -181,7 +228,7 @@ class VoiceTestApp:
             self.is_recording = True
             self.audio_chunks = []
             self.record_start_time = time.perf_counter()
-            print(f"\n[Recording started... Hold {self.key_display.upper()} and speak]")
+            print(f"\n[Recording started... Hold {self.key_display} and speak]")
 
     def stop_and_send(self):
         with self.lock:
@@ -219,7 +266,7 @@ class VoiceTestApp:
         endpoint = f"{self.url}/v1/process"
         start_req = time.perf_counter()
         try:
-            with httpx.Client(timeout=30.0) as client:
+            with httpx.Client(timeout=60.0) as client:
                 res = client.post(endpoint, files=files, data=data)
         except httpx.ConnectError:
             print(f"[Error: Server is not running at {self.url}]")
@@ -329,11 +376,11 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--key",
         type=str,
-        default="shift+v",
+        default="ctrl_r",
         help=(
-            "Key combo to hold for recording. "
-            "Use shift+<letter> (e.g. shift+v) or a bare function key (e.g. f9). "
-            "Default: shift+v"
+            "Key to hold for recording (default: ctrl_r = Right Ctrl). "
+            "Use a modifier key or combo: ctrl_r, shift_r, ctrl+shift, "
+            "scroll_lock, pause. Do NOT use letter keys or function keys."
         ),
     )
     return parser.parse_args(argv)
@@ -348,11 +395,11 @@ def main(argv: Optional[list[str]] = None) -> None:
         )
 
     try:
-        modifier, key_part = parse_key(args.key)
+        key_tuple = parse_key(args.key)
     except ValueError as e:
         sys.exit(f"Error: {e}")
 
-    key_display = args.key.lower()
+    key_display = "+".join(k.upper() for k in key_tuple)
 
     # Lazy import devtools dependencies
     try:
@@ -361,14 +408,19 @@ def main(argv: Optional[list[str]] = None) -> None:
     except ImportError as e:
         sys.exit(
             f"Missing dependency: {e.name}. Install devtools with: "
-            "pip install -e \".[devtools]\""
+            'pip install -e ".[devtools]"'
         )
+
+    try:
+        required_slots = resolve_pynput_keys(key_tuple, pynput.keyboard)
+    except ValueError as e:
+        sys.exit(f"Error: {e}")
 
     print("==================================================")
     print("VBOARD LAPTOP VOICE TEST")
     print(f"Backend URL:    {args.url}")
     print(f"Sample Rate:    {args.rate} Hz")
-    print(f"Hotkey:         Hold and release {key_display.upper()}")
+    print(f"Hotkey:         Hold and release {key_display}")
     print(f"Languages:      {args.languages or 'None'}")
     print("==================================================")
 
@@ -390,40 +442,20 @@ def main(argv: Optional[list[str]] = None) -> None:
     except Exception as e:
         sys.exit(f"Failed to open default microphone: {e}")
 
-    # Build pynput key references
-    if modifier == "shift":
-        # Shift modifier: track shift state + target char/key
-        shift_keys = {pynput.keyboard.Key.shift, pynput.keyboard.Key.shift_r}
-        if key_part in _FUNCTION_KEYS:
-            target_key = getattr(pynput.keyboard.Key, key_part, None)
-        else:
-            target_key = pynput.keyboard.KeyCode.from_char(key_part)
+    held_keys: set[Any] = set()
 
-        shift_held = {"held": False}
+    def combo_active() -> bool:
+        return all(any(k in held_keys for k in slot) for slot in required_slots)
 
-        def on_press(key):
-            if key in shift_keys:
-                shift_held["held"] = True
-            elif shift_held["held"] and key == target_key:
-                app.start_recording()
+    def on_press(key):
+        held_keys.add(key)
+        if combo_active():
+            app.start_recording()
 
-        def on_release(key):
-            if key in shift_keys:
-                shift_held["held"] = False
-            elif key == target_key and app.is_recording:
-                app.stop_and_send()
-
-    else:
-        # Bare function key
-        target_key = getattr(pynput.keyboard.Key, key_part, None)
-
-        def on_press(key):
-            if key == target_key:
-                app.start_recording()
-
-        def on_release(key):
-            if key == target_key:
-                app.stop_and_send()
+    def on_release(key):
+        held_keys.discard(key)
+        if app.is_recording and not combo_active():
+            app.stop_and_send()
 
     listener = pynput.keyboard.Listener(on_press=on_press, on_release=on_release)
     listener.daemon = True
