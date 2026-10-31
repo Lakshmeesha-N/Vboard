@@ -176,6 +176,7 @@ class Recorder(
     }
 
     companion object {
-        private const val AMPLITUDE_GAIN = 3f
+        // LoudnessMapper owns floor+gain; send it the true peak.
+        private const val AMPLITUDE_GAIN = 1f
     }
 }

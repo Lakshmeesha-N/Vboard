@@ -8,8 +8,8 @@ import android.view.View
 import kotlin.math.sin
 
 /**
- * Live dotted waveform for the recording pill. Amplitude is eased
- * through [AmplitudeSmoother] so the dots follow speech without jitter.
+ * Live dotted waveform for the recording pill. Amplitude is scaled
+ * through [LoudnessMapper] so speech reads clearly and silence sits flat.
  */
 class WaveformView @JvmOverloads constructor(
     context: Context,
@@ -20,7 +20,7 @@ class WaveformView @JvmOverloads constructor(
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0xFF9AA0A6.toInt()
     }
-    private val smoother = AmplitudeSmoother()
+    private val smoother = LoudnessMapper()
     private var phase = 0f
 
     /** Feeds a raw 0..1 mic level; safe to call from any thread. */
