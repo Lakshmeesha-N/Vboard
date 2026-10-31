@@ -146,3 +146,5 @@ Planned blocks (rename if you must, but keep the map true):
 - TextBoxEditor: reads and writes the textbox through the input connection
 - SettingsStore: language choice, backend URL, device ID
 - OnboardingActivity: enable steps, mic permission, language picker
+
+11. Invoke the `security-fixer` subagent to audit and automatically fix security issues before declaring the feature complete.

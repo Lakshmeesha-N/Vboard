@@ -27,3 +27,4 @@ Follow these steps strictly in order:
 5. **Phone Checklist & Hard Stop:**
    - Print the **Phone Checklist**: numbered steps in plain English for a tester with no Kotlin knowledge, each ending with `Expected: <result>`.
    - **STOP** immediately and wait for the user's phone test results.
+
