@@ -1,0 +1,22 @@
+{
+    "permissions": {
+        "defaultMode": "acceptEdits",
+        "allow": [
+            "Bash(.\\gradlew.bat:*)",
+            "Bash(./gradlew:*)",
+            "Bash(git status:*)",
+            "Bash(git diff:*)",
+            "Bash(git add:*)",
+            "Bash(git commit:*)",
+            "Bash(git log:*)",
+            "Bash(adb devices:*)"
+        ],
+        "deny": [
+            "Bash(git push:*)",
+            "Read(../Vboard_backend/**)",
+            "Edit(../Vboard_backend/**)",
+            "Read(**/.env)",
+            "Read(**/local.properties)"
+        ]
+    }
+}
