@@ -6,7 +6,7 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.Toast
 
-class KeyboardService : InputMethodService(), KeyboardView.Listener {
+class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.Listener {
 
     private var keyboardView: KeyboardView? = null
     private var editor: TextBoxEditor? = null
@@ -16,6 +16,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
         editor = TextBoxEditor { currentInputConnection }
         return KeyboardView(this).also {
             it.listener = this
+            it.topBarListener = this
             keyboardView = it
         }
     }
@@ -32,6 +33,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
 
     override fun onDestroy() {
         keyboardView?.listener = null
+        keyboardView?.topBarListener = null
         keyboardView = null
         editor = null
         super.onDestroy()
@@ -59,5 +61,13 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener {
 
     override fun onSymbolsStub() {
         Toast.makeText(this, "Symbols in F2", Toast.LENGTH_SHORT).show()
+    }
+
+    override fun onVoiceClick() {
+        Toast.makeText(this, "Voice recording lands in F4", Toast.LENGTH_SHORT).show()
+    }
+
+    override fun onAiClick() {
+        Toast.makeText(this, "AI actions land in F8", Toast.LENGTH_SHORT).show()
     }
 }

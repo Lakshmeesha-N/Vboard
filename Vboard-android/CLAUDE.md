@@ -138,6 +138,7 @@ Planned blocks (rename if you must, but keep the map true):
 - KeyboardService: the InputMethodService, connects the other blocks
 - KeyboardView / KeyLayouts / KeyButton: keys and layouts
 - TopBarView: idle bar and recording pill
+- VoiceBarsDrawable: white 5-bar voice icon drawable (used by TopBarView)
 - WaveformView: the live dotted wave
 - Recorder: AudioRecord to in-memory WAV
 - WavBuilder: WAV header (pure Kotlin, unit tested)

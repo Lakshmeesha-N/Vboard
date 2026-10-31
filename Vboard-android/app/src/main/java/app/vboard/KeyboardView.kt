@@ -19,6 +19,13 @@ class KeyboardView(context: Context) : LinearLayout(context) {
     }
 
     var listener: Listener? = null
+    var topBarListener: TopBarView.Listener? = null
+        set(value) {
+            field = value
+            topBar?.listener = value
+        }
+
+    private var topBar: TopBarView? = null
 
     private enum class ShiftState { OFF, SHIFTED, CAPS }
 
@@ -31,6 +38,12 @@ class KeyboardView(context: Context) : LinearLayout(context) {
         setBackgroundColor(0xFF17181B.toInt())
         val side = dp(6)
         setPadding(side, dp(6), side, 0)
+        TopBarView(context).also {
+            it.listener = topBarListener
+            it.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
+            addView(it)
+            topBar = it
+        }
         buildRows()
         ViewCompat.setOnApplyWindowInsetsListener(this) { v, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
