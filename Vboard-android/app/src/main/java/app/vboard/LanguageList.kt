@@ -27,6 +27,8 @@ object LanguageList {
     fun isValid(selection: List<String>): Boolean =
         selection.size in MIN_SELECTION..MAX_SELECTION && selection.all { it in ALL }
 
+    fun isAtMax(selection: List<String>): Boolean = selection.size >= MAX_SELECTION
+
     fun format(selection: List<String>): String = selection.joinToString(",")
 
     fun parse(csv: String?): List<String> {

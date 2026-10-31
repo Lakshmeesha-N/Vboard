@@ -85,10 +85,14 @@ class MainActivity : AppCompatActivity() {
     private fun refreshLangsUi() {
         val sel = currentSelection()
         saveLangsButton.isEnabled = LanguageList.isValid(sel)
-        langsStatus.text = if (store.hasLanguages()) {
-            "Saved: ${store.getLanguagesCsv()}"
-        } else {
-            "Pick 1 to 5 languages, then save."
+        val atMax = LanguageList.isAtMax(sel)
+        for ((name, box) in langBoxes) {
+            box.isEnabled = name in sel || !atMax
+        }
+        langsStatus.text = when {
+            atMax -> "Maximum 5 languages. Untick one to choose another."
+            store.hasLanguages() -> "Saved: ${store.getLanguagesCsv()}"
+            else -> "Pick 1 to 5 languages, then save."
         }
     }
 

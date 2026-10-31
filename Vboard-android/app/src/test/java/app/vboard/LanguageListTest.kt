@@ -48,6 +48,12 @@ class LanguageListTest {
     }
 
     @Test
+    fun isAtMax_trueAtFiveOrMore() {
+        assertFalse(LanguageList.isAtMax(listOf("Kannada")))
+        assertTrue(LanguageList.isAtMax(listOf("Kannada", "Hindi", "English", "Tamil", "Telugu")))
+    }
+
+    @Test
     fun format_joinsWithCommaNoSpaces() {
         assertEquals("Kannada,Hindi,English", LanguageList.format(listOf("Kannada", "Hindi", "English")))
     }
