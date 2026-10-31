@@ -63,7 +63,7 @@ Inspect `design/image.png` and `design/image1.png` before building UI. Match the
 
 ## 6. Tech Stack & Commands
 - **Stack:** Kotlin, plain Android `View` system (NO Jetpack Compose). `minSdk = 24`, package `app.vboard`.
-- **Libraries:** `OkHttp` (HTTP/multipart), `kotlinx.coroutines`, `kotlinx.serialization` or `Moshi` (JSON).
+- **Libraries:** `OkHttp` (HTTP/multipart), `kotlinx.coroutines`, `org.json` (JSON; `org.json:json` as test-only dep for plain-JVM tests).
 - **Hardware:** Windows laptop (8 GB RAM). **NEVER start an emulator.** User tests on a real phone over USB.
 - **Commands:**
   - Build: `.\gradlew.bat assembleDebug`
@@ -143,6 +143,8 @@ Planned blocks (rename if you must, but keep the map true):
 - Recorder: AudioRecord to in-memory WAV
 - WavBuilder: WAV header (pure Kotlin, unit tested)
 - BackendClient: OkHttp call to /v1/process
+- ProcessResponse: response models + pure org.json parser (unit tested)
+- ContextPolicy: password-field check + context cap (pure Kotlin, unit tested)
 - ActionApplier: applyAction logic (pure Kotlin, unit tested)
 - TextBoxEditor: reads and writes the textbox through the input connection
 - SettingsStore: language choice, backend URL, device ID, mic-requested flag

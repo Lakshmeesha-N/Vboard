@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Debug only: allow cleartext to the dev backend over USB (`adb reverse`).
+         Release builds have no networkSecurityConfig, so cleartext stays blocked. -->
+    <application android:networkSecurityConfig="@xml/network_security_config" />
+</manifest>

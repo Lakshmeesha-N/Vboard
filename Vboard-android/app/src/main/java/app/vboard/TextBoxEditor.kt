@@ -54,4 +54,24 @@ class TextBoxEditor(private val connection: () -> InputConnection?) {
     /** True when at least one char sits before the cursor; only the length is used. */
     fun hasTextBeforeCursor(): Boolean =
         connection()?.getTextBeforeCursor(1, 0)?.isNotEmpty() == true
+
+    /**
+     * Reads up to [maxChars] of textbox context (before + after cursor).
+     * Returns "" in password fields or when unreadable. Callers must never log it.
+     */
+    fun readContextText(inputType: Int, maxChars: Int): String {
+        if (ContextPolicy.isPasswordInputType(inputType)) return ""
+        val ic = connection() ?: return ""
+        val before = try {
+            ic.getTextBeforeCursor(maxChars, 0)?.toString()
+        } catch (_: Exception) {
+            null
+        }
+        val after = try {
+            ic.getTextAfterCursor(maxChars, 0)?.toString()
+        } catch (_: Exception) {
+            null
+        }
+        return ContextPolicy.capContext(before, after, maxChars)
+    }
 }
