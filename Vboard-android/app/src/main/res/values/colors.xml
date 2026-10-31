@@ -2,4 +2,10 @@
 <resources>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <color name="keyboard_surface">#FF17181B</color>
+    <color name="keycap">#FF282A2F</color>
+    <color name="keycap_pressed">#FF3A3D44</color>
+    <color name="keycap_modifier">#FF1F2125</color>
+    <color name="key_label">#FFFFFFFF</color>
+    <color name="enter_tint">#FF7DD3FC</color>
 </resources>

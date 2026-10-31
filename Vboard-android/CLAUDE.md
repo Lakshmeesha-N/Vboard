@@ -136,7 +136,7 @@ Each block is one small file or class. To change or fix something, open only tha
 Use this map first, don't search the whole project. After each feature, update the map.
 Planned blocks (rename if you must, but keep the map true):
 - KeyboardService: the InputMethodService, connects the other blocks
-- KeyboardView / KeyLayouts: keys and layouts
+- KeyboardView / KeyLayouts / KeyButton: keys and layouts
 - TopBarView: idle bar and recording pill
 - WaveformView: the live dotted wave
 - Recorder: AudioRecord to in-memory WAV
@@ -148,3 +148,5 @@ Planned blocks (rename if you must, but keep the map true):
 - OnboardingActivity: enable steps, mic permission, language picker
 
 11. Invoke the `security-fixer` subagent to audit and automatically fix security issues before declaring the feature complete.
+
+Java for Gradle: JAVA_HOME=C:\Program Files\Android\Android Studio\jbr. Android SDK: C:\Users\laksh\AppData\Local\Android\Sdk. Do not search for them.
