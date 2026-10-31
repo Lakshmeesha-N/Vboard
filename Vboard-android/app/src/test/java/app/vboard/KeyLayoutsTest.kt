@@ -1,6 +1,7 @@
 package app.vboard
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -51,25 +52,51 @@ class KeyLayoutsTest {
     }
 
     @Test
-    fun enterBehavior_multiLineAlwaysNewLine() {
-        // Ids mirror EditorInfo.IME_ACTION_*: 0 = UNSPECIFIED, 2 = GO, 6 = DONE.
-        assertEquals(KeyLayouts.EnterBehavior.NEW_LINE, KeyLayouts.decideEnterBehavior(true, 0))
-        assertEquals(KeyLayouts.EnterBehavior.NEW_LINE, KeyLayouts.decideEnterBehavior(true, 2))
-        assertEquals(KeyLayouts.EnterBehavior.NEW_LINE, KeyLayouts.decideEnterBehavior(true, 6))
+    fun enterBehavior_searchActionRunsEvenWhenMultiLine() {
+        // 3 = SEARCH; editor action wins over the multi-line flag.
+        assertEquals(KeyLayouts.EnterBehavior.EDITOR_ACTION, KeyLayouts.decideEnterBehavior(true, 3, false))
+        assertEquals(KeyLayouts.EnterBehavior.EDITOR_ACTION, KeyLayouts.decideEnterBehavior(false, 3, false))
     }
 
     @Test
     fun enterBehavior_singleLineActionTriesEditorAction() {
         // 2 = GO, 3 = SEARCH, 4 = SEND, 5 = NEXT, 6 = DONE, 7 = PREVIOUS.
         listOf(2, 3, 4, 5, 6, 7).forEach { action ->
-            assertEquals(KeyLayouts.EnterBehavior.EDITOR_ACTION, KeyLayouts.decideEnterBehavior(false, action))
+            assertEquals(KeyLayouts.EnterBehavior.EDITOR_ACTION, KeyLayouts.decideEnterBehavior(false, action, false))
         }
     }
 
     @Test
-    fun enterBehavior_singleLineWithoutActionSendsKeyEvent() {
+    fun enterBehavior_noActionMultiLineGivesNewLine() {
         // 0 = UNSPECIFIED, 1 = NONE.
-        assertEquals(KeyLayouts.EnterBehavior.KEY_EVENT, KeyLayouts.decideEnterBehavior(false, 0))
-        assertEquals(KeyLayouts.EnterBehavior.KEY_EVENT, KeyLayouts.decideEnterBehavior(false, 1))
+        assertEquals(KeyLayouts.EnterBehavior.NEW_LINE, KeyLayouts.decideEnterBehavior(true, 0, false))
+        assertEquals(KeyLayouts.EnterBehavior.NEW_LINE, KeyLayouts.decideEnterBehavior(true, 1, false))
+    }
+
+    @Test
+    fun enterBehavior_singleLineWithoutActionSendsKeyEvent() {
+        assertEquals(KeyLayouts.EnterBehavior.KEY_EVENT, KeyLayouts.decideEnterBehavior(false, 0, false))
+        assertEquals(KeyLayouts.EnterBehavior.KEY_EVENT, KeyLayouts.decideEnterBehavior(false, 1, false))
+    }
+
+    @Test
+    fun enterBehavior_noEnterActionFlagAlwaysNewLine() {
+        // IME_FLAG_NO_ENTER_ACTION set: newline regardless of action or shape.
+        assertEquals(KeyLayouts.EnterBehavior.NEW_LINE, KeyLayouts.decideEnterBehavior(false, 2, true))
+        assertEquals(KeyLayouts.EnterBehavior.NEW_LINE, KeyLayouts.decideEnterBehavior(true, 2, true))
+        assertEquals(KeyLayouts.EnterBehavior.NEW_LINE, KeyLayouts.decideEnterBehavior(false, 0, true))
+    }
+
+    @Test
+    fun repeatTiming_firstTickWaitsThenRepeatsFast() {
+        assertEquals(400L, KeyLayouts.RepeatTiming.delayForTick(0))
+        assertEquals(50L, KeyLayouts.RepeatTiming.delayForTick(1))
+        assertEquals(50L, KeyLayouts.RepeatTiming.delayForTick(100))
+    }
+
+    @Test
+    fun repeatTiming_stopsWhenTextboxEmpty() {
+        assertTrue(KeyLayouts.RepeatTiming.shouldContinue(true))
+        assertFalse(KeyLayouts.RepeatTiming.shouldContinue(false))
     }
 }

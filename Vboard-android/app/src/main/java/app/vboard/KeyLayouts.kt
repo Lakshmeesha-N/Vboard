@@ -36,13 +36,25 @@ object KeyLayouts {
     const val IME_ACTION_NONE_ID = 1
 
     /**
-     * Pure Enter-key policy: multi-line fields always get a newline; single-line
-     * fields with a real action try it first; single-line fields with no action
-     * go straight to a physical Enter key event.
+     * Pure Enter-key policy: NO_ENTER_ACTION always inserts a newline; a real
+     * action (GO, SEARCH, SEND, NEXT, DONE, PREVIOUS) tries the editor action
+     * first; with no action (NONE, UNSPECIFIED) multi-line fields get a
+     * newline and single-line fields get a physical Enter key event.
      */
-    fun decideEnterBehavior(isMultiLine: Boolean, imeActionId: Int): EnterBehavior = when {
+    fun decideEnterBehavior(isMultiLine: Boolean, imeActionId: Int, noEnterAction: Boolean): EnterBehavior = when {
+        noEnterAction -> EnterBehavior.NEW_LINE
+        imeActionId != IME_ACTION_UNSPECIFIED_ID && imeActionId != IME_ACTION_NONE_ID -> EnterBehavior.EDITOR_ACTION
         isMultiLine -> EnterBehavior.NEW_LINE
-        imeActionId == IME_ACTION_UNSPECIFIED_ID || imeActionId == IME_ACTION_NONE_ID -> EnterBehavior.KEY_EVENT
-        else -> EnterBehavior.EDITOR_ACTION
+        else -> EnterBehavior.KEY_EVENT
+    }
+
+    /** Pure hold-to-repeat timing so the policy is JVM-testable without Android. */
+    object RepeatTiming {
+        const val INITIAL_DELAY_MS = 400L
+        const val INTERVAL_MS = 50L
+
+        fun delayForTick(tickIndex: Int): Long = if (tickIndex == 0) INITIAL_DELAY_MS else INTERVAL_MS
+
+        fun shouldContinue(hasTextBeforeCursor: Boolean): Boolean = hasTextBeforeCursor
     }
 }

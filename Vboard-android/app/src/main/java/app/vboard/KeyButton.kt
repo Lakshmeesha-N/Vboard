@@ -1,6 +1,8 @@
 package app.vboard
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.util.AttributeSet
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
@@ -18,6 +20,22 @@ class KeyButton @JvmOverloads constructor(
     var onLongPress: (() -> Unit)? = null
     /** When false, onKeyDown fires on ACTION_UP so a long-press can replace the tap. */
     var fireOnDown: Boolean = true
+    /** When true, holding the key repeats onRepeat after an initial delay. */
+    var repeatOnHold: Boolean = false
+    /** Return false to stop repeating (e.g. textbox is empty). */
+    var onRepeat: (() -> Boolean)? = null
+
+    // Main-thread handler and a single reused runnable: at most one repeat runs,
+    // and the touch path allocates nothing.
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var repeatTick = 0
+    private val repeatRunnable: Runnable = Runnable {
+        if (!isPressed || !repeatOnHold) return@Runnable
+        if (onRepeat?.invoke() == true) {
+            repeatTick++
+            mainHandler.postDelayed(repeatRunnable, KeyLayouts.RepeatTiming.delayForTick(repeatTick))
+        }
+    }
 
     private var longPressFired = false
     private val longPressRunnable = Runnable {
@@ -46,8 +64,15 @@ class KeyButton @JvmOverloads constructor(
         background = ContextCompat.getDrawable(context, bg)
     }
 
+    /** Stops a running hold-to-repeat; safe to call when none is running. */
+    fun stopRepeat() {
+        mainHandler.removeCallbacks(repeatRunnable)
+        repeatTick = 0
+    }
+
     override fun onDetachedFromWindow() {
         removeCallbacks(longPressRunnable)
+        stopRepeat()
         isPressed = false
         longPressFired = false
         super.onDetachedFromWindow()
@@ -63,10 +88,16 @@ class KeyButton @JvmOverloads constructor(
                     postDelayed(longPressRunnable, ViewConfiguration.getLongPressTimeout().toLong())
                 }
                 if (fireOnDown) onKeyDown?.invoke()
+                if (repeatOnHold) {
+                    mainHandler.removeCallbacks(repeatRunnable)
+                    repeatTick = 0
+                    mainHandler.postDelayed(repeatRunnable, KeyLayouts.RepeatTiming.delayForTick(0))
+                }
                 return true
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 removeCallbacks(longPressRunnable)
+                stopRepeat()
                 isPressed = false
                 val fired = longPressFired
                 longPressFired = false
