@@ -24,6 +24,7 @@ class TopBarView @JvmOverloads constructor(
         fun onAiClick()
         fun onCancel()
         fun onConfirm()
+        fun onUndo()
     }
 
     var listener: Listener? = null
@@ -32,6 +33,7 @@ class TopBarView @JvmOverloads constructor(
     private val pill: LinearLayout
     private val wave: WaveformView
     private val timerText: TextView
+    private var undoButton: TextView? = null
     private var cancelButton: TextView? = null
     private var confirmButton: TextView? = null
     private var recordStartMs = 0L
@@ -59,6 +61,12 @@ class TopBarView @JvmOverloads constructor(
                 listener?.onVoiceClick()
             }
         )
+        undoButton = makeTextButton("Undo", "↩", 0xFFFFFFFF.toInt(), transparent = true) {
+            listener?.onUndo()
+        }.also {
+            it.visibility = GONE
+            idleRow.addView(it)
+        }
         idleRow.addView(
             makeButton("AI actions", R.drawable.ai_ring_background, null) {
                 listener?.onAiClick()
@@ -126,6 +134,11 @@ class TopBarView @JvmOverloads constructor(
         pill.visibility = VISIBLE
         stopTimer()
         setPillEnabled(false)
+    }
+
+    /** Undo is visible only in the idle bar, after an AI edit. */
+    fun setUndoVisible(visible: Boolean) {
+        undoButton?.visibility = if (visible) VISIBLE else GONE
     }
 
     override fun onDetachedFromWindow() {

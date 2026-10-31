@@ -43,6 +43,12 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
     /** True while a /v1/process round-trip is in flight; a second ✓ is ignored. */
     private var sending = false
 
+    /** One-level Undo: full box text saved before an AI insert/rewrite. */
+    private var undoText: String? = null
+
+    /** Full box text snapshotted at ✓; rewrite applies only if it still matches. */
+    private var snapshotFull = ""
+
     override fun onCreate() {
         super.onCreate()
         window?.window?.let { WindowCompat.setDecorFitsSystemWindows(it, false) }
@@ -60,6 +66,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         imeOptions = info?.imeOptions ?: EditorInfo.IME_NULL
+        clearUndo()
         keyboardView?.refreshInsets()
     }
 
@@ -69,6 +76,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
         keyboardView?.resetShift()
         stopRecordingSilently()
         cancelSend()
+        clearUndo()
         keyboardView?.showIdleBar()
     }
 
@@ -85,21 +93,27 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
     }
 
     override fun onText(text: String) {
+        clearUndo()
         editor?.commitText(text)
     }
 
     override fun onBackspace() {
+        clearUndo()
         editor?.deleteCodePointBefore()
     }
 
     override fun onBackspaceRepeat(): Boolean {
         val ed = editor ?: return false
         val keepGoing = KeyLayouts.RepeatTiming.shouldContinue(ed.hasTextBeforeCursor())
-        if (keepGoing) ed.deleteCodePointBefore()
+        if (keepGoing) {
+            clearUndo()
+            ed.deleteCodePointBefore()
+        }
         return keepGoing
     }
 
     override fun onEnter() {
+        clearUndo()
         val inputType = currentInputEditorInfo?.inputType ?: EditorInfo.TYPE_NULL
         editor?.performEnter(inputType, imeOptions)
     }
@@ -161,6 +175,29 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
         finishRecording(auto = false)
     }
 
+    override fun onUndo() {
+        val ed = editor ?: return
+        val restore = undoText ?: return
+        clearUndo()
+        val inputType = currentInputEditorInfo?.inputType ?: EditorInfo.TYPE_NULL
+        val current = ed.readFullText(inputType, ContextPolicy.CONTEXT_MAX_CHARS)
+        if (!current.reliable) {
+            toast(MSG_SELECTION_UNSURE)
+            return
+        }
+        if (current.selected.isNotEmpty() && !ed.collapseSelectionTo(current.endCharIndex)) {
+            toast(MSG_SELECTION_UNSURE)
+            return
+        }
+        val beforeCp = ed.codePointCount(current.before + current.selected)
+        val afterCp = ed.codePointCount(current.after)
+        if (!ed.rewriteFull(beforeCp, afterCp, restore)) {
+            toast(MSG_SELECTION_UNSURE)
+            return
+        }
+        ed.moveCursorToEnd(restore.length)
+    }
+
     private fun finishRecording(auto: Boolean) {
         if (!recording) return
         recording = false
@@ -190,9 +227,22 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
             openSetup()
             return
         }
-        // Read the textbox now, on the main thread, at the moment of ✓.
+        // Read the full textbox now, on the main thread, at the moment of ✓.
         val inputType = currentInputEditorInfo?.inputType ?: EditorInfo.TYPE_NULL
-        val contextText = editor?.readContextText(inputType, ContextPolicy.CONTEXT_MAX_CHARS) ?: ""
+        val full = editor?.readFullText(inputType, ContextPolicy.CONTEXT_MAX_CHARS)
+            ?: TextBoxEditor.FullText("", "", "", "", 0, false)
+        if (!full.reliable) {
+            clearPendingWav()
+            keyboardView?.showIdleBar()
+            toast(MSG_SELECTION_UNSURE)
+            return
+        }
+        snapshotFull = full.full
+        val contextText = if (full.full.length <= ContextPolicy.CONTEXT_MAX_CHARS) {
+            full.full
+        } else {
+            ContextPolicy.capContext(full.before + full.selected, full.after, ContextPolicy.CONTEXT_MAX_CHARS)
+        }
         keyboardView?.showProcessingBar()
         sendToBackend(store, contextText)
     }
@@ -212,6 +262,16 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
         val wav = pendingWav
         pendingWav = null
         if (wav != null) Arrays.fill(wav, 0)
+    }
+
+    private fun showUndo(previousFullText: String) {
+        undoText = previousFullText
+        keyboardView?.setUndoVisible(true)
+    }
+
+    private fun clearUndo() {
+        undoText = null
+        keyboardView?.setUndoVisible(false)
     }
 
     private fun sendToBackend(store: SettingsStore, contextText: String) {
@@ -269,18 +329,69 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
                         outcome.code != 200 || resp == null ->
                             toast(MSG_BAD_RECORDING)
                         resp.action == null ->
-                            toast("Nothing to change.")
-                        resp.action.action == "insert" -> {
-                            editor?.commitText(resp.action.text)
-                            if (resp.usedFallback) toast("Inserted from transcript.")
-                        }
-                        else -> toast("Edit actions land in F6.")
+                            toast(MSG_NOTHING_TO_CHANGE)
+                        resp.action.action == "insert" -> applyInsert(resp)
+                        resp.action.action == "rewrite" -> applyRewrite(resp)
+                        else -> toast(MSG_REPLACE_UNSUPPORTED)
                     }
                 }
                 SendOutcome.Failed -> toast(MSG_NO_CONNECTION)
             }
             // A newer recording owns the pill; don't clobber it.
             if (!recording) keyboardView?.showIdleBar()
+        }
+    }
+
+    private fun applyInsert(resp: ProcessResponse) {
+        val ed = editor ?: return
+        val action = resp.action ?: return
+        val inputType = currentInputEditorInfo?.inputType ?: EditorInfo.TYPE_NULL
+        val prev = ed.readFullText(inputType, ContextPolicy.CONTEXT_MAX_CHARS).full
+        ed.commitText(action.text)
+        showUndo(prev)
+        if (resp.usedFallback) toast(MSG_INSERTED_FALLBACK) else toast(MSG_INSERTED)
+    }
+
+    private fun applyRewrite(resp: ProcessResponse) {
+        val ed = editor ?: return
+        val action = resp.action ?: return
+        val inputType = currentInputEditorInfo?.inputType ?: EditorInfo.TYPE_NULL
+        val current = ed.readFullText(inputType, ContextPolicy.CONTEXT_MAX_CHARS)
+        if (!current.reliable) {
+            toast(MSG_SELECTION_UNSURE)
+            return
+        }
+        if (ActionApplier.isTooLong(current.full)) {
+            toast(MSG_TOO_LONG)
+            return
+        }
+        if (current.full != snapshotFull) {
+            toast(MSG_TEXT_CHANGED)
+            return
+        }
+        when (ActionApplier.applyAction(current.full, action).outcome) {
+            ActionApplier.Outcome.NOTHING_CHANGED -> toast(MSG_NOTHING_CHANGED)
+            ActionApplier.Outcome.TOO_LONG -> toast(MSG_TOO_LONG)
+            ActionApplier.Outcome.REPLACE_UNSUPPORTED -> toast(MSG_REPLACE_UNSUPPORTED)
+            ActionApplier.Outcome.NULL_ACTION -> toast(MSG_NOTHING_TO_CHANGE)
+            ActionApplier.Outcome.REWRITTEN -> {
+                if (current.selected.isNotEmpty() && !ed.collapseSelectionTo(current.endCharIndex)) {
+                    toast(MSG_SELECTION_UNSURE)
+                    return
+                }
+                val beforeCp = ed.codePointCount(current.before + current.selected)
+                val afterCp = ed.codePointCount(current.after)
+                val prev = current.full
+                if (!ed.rewriteFull(beforeCp, afterCp, action.text)) {
+                    toast(MSG_SELECTION_UNSURE)
+                    return
+                }
+                showUndo(prev)
+                toast(MSG_REWRITTEN)
+            }
+            ActionApplier.Outcome.INSERTED -> {
+                // Unreachable: insert is routed to applyInsert. Kept for exhaustiveness.
+            }
         }
     }
 
@@ -315,5 +426,14 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
         private const val TAG = "VBOARD_NET"
         private const val MSG_NO_CONNECTION = "No connection. Try again."
         private const val MSG_BAD_RECORDING = "Couldn't use that recording. Try again."
+        private const val MSG_INSERTED = "Inserted"
+        private const val MSG_INSERTED_FALLBACK = "Inserted from transcript."
+        private const val MSG_REWRITTEN = "Rewritten"
+        private const val MSG_NOTHING_CHANGED = "Nothing changed"
+        private const val MSG_NOTHING_TO_CHANGE = "Nothing to change"
+        private const val MSG_REPLACE_UNSUPPORTED = "That edit isn't supported yet"
+        private const val MSG_TOO_LONG = "Text too long to edit"
+        private const val MSG_TEXT_CHANGED = "Text changed. Kept current text."
+        private const val MSG_SELECTION_UNSURE = "Couldn't replace selected text. Kept current text."
     }
 }

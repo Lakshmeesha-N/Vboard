@@ -77,6 +77,10 @@ class KeyboardView(context: Context) : LinearLayout(context) {
         topBar?.setAmplitude(raw)
     }
 
+    fun setUndoVisible(visible: Boolean) {
+        topBar?.setUndoVisible(visible)
+    }
+
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         ViewCompat.requestApplyInsets(this)
@@ -167,7 +171,11 @@ class KeyboardView(context: Context) : LinearLayout(context) {
                 gravity = Gravity.CENTER
                 setTextSize(
                     TypedValue.COMPLEX_UNIT_SP,
-                    if (spec.smallText) 12f else 19f
+                    when {
+                        spec.smallText -> KEY_SPACE_LABEL_SP
+                        spec.modifier -> KEY_MODIFIER_LABEL_SP
+                        else -> KEY_LABEL_SP
+                    }
                 )
                 if (spec.enterKey) setTextColor(0xFF7DD3FC.toInt()) else setTextColor(0xFFFFFFFF.toInt())
                 onKeyDown = spec.action
@@ -194,5 +202,11 @@ class KeyboardView(context: Context) : LinearLayout(context) {
 
     companion object {
         private const val KEY_ROW_HEIGHT_DP = 51
+        // Letters + numbers, bumped for visibility (was 19sp). Modifiers stay
+        // one step smaller so ?123 never clips its narrow key. Spacebar label
+        // stays smallest. Heights/widths/spacing unchanged.
+        private const val KEY_LABEL_SP = 23f
+        private const val KEY_MODIFIER_LABEL_SP = 21f
+        private const val KEY_SPACE_LABEL_SP = 14f
     }
 }
