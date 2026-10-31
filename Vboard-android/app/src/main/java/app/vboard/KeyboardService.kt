@@ -48,7 +48,8 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
     }
 
     override fun onEnter() {
-        editor?.performEnter(imeOptions)
+        val inputType = currentInputEditorInfo?.inputType ?: EditorInfo.TYPE_NULL
+        editor?.performEnter(inputType, imeOptions)
     }
 
     override fun onShiftChanged(capsLock: Boolean) = Unit

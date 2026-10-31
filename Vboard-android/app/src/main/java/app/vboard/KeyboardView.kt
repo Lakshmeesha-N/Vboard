@@ -146,6 +146,6 @@ class KeyboardView(context: Context) : LinearLayout(context) {
         (value * resources.displayMetrics.density).toInt()
 
     companion object {
-        private const val KEY_ROW_HEIGHT_DP = 44
+        private const val KEY_ROW_HEIGHT_DP = 51
     }
 }

@@ -1,5 +1,6 @@
 package app.vboard
 
+import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 
@@ -19,15 +20,29 @@ class TextBoxEditor(private val connection: () -> InputConnection?) {
         ic.endBatchEdit()
     }
 
-    fun performEnter(imeOptions: Int): Boolean {
+    fun performEnter(inputType: Int, imeOptions: Int): Boolean {
         val ic = connection() ?: return false
+        val isMultiLine = (inputType and EditorInfo.TYPE_MASK_CLASS) == EditorInfo.TYPE_CLASS_TEXT &&
+            (inputType and (EditorInfo.TYPE_TEXT_FLAG_MULTI_LINE or EditorInfo.TYPE_TEXT_VARIATION_LONG_MESSAGE)) != 0
         val action = imeOptions and EditorInfo.IME_MASK_ACTION
-        return if (action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
-            ic.performEditorAction(action)
-            true
-        } else {
-            commitText("\n")
-            false
+        return when (KeyLayouts.decideEnterBehavior(isMultiLine, action)) {
+            KeyLayouts.EnterBehavior.NEW_LINE -> {
+                commitText("\n")
+                true
+            }
+            KeyLayouts.EnterBehavior.EDITOR_ACTION -> {
+                if (!ic.performEditorAction(action)) sendEnterKey(ic)
+                true
+            }
+            KeyLayouts.EnterBehavior.KEY_EVENT -> {
+                sendEnterKey(ic)
+                true
+            }
         }
+    }
+
+    private fun sendEnterKey(ic: InputConnection) {
+        ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
+        ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
     }
 }

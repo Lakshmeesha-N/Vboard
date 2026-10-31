@@ -27,4 +27,22 @@ object KeyLayouts {
         }
         return base
     }
+
+    enum class EnterBehavior { NEW_LINE, EDITOR_ACTION, KEY_EVENT }
+
+    // Mirrors of EditorInfo.IME_ACTION_* ids so the decision stays JVM-testable
+    // without Android classes. Values match android.view.inputmethod.EditorInfo.
+    const val IME_ACTION_UNSPECIFIED_ID = 0
+    const val IME_ACTION_NONE_ID = 1
+
+    /**
+     * Pure Enter-key policy: multi-line fields always get a newline; single-line
+     * fields with a real action try it first; single-line fields with no action
+     * go straight to a physical Enter key event.
+     */
+    fun decideEnterBehavior(isMultiLine: Boolean, imeActionId: Int): EnterBehavior = when {
+        isMultiLine -> EnterBehavior.NEW_LINE
+        imeActionId == IME_ACTION_UNSPECIFIED_ID || imeActionId == IME_ACTION_NONE_ID -> EnterBehavior.KEY_EVENT
+        else -> EnterBehavior.EDITOR_ACTION
+    }
 }

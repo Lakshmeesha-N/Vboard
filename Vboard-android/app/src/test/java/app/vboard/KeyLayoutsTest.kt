@@ -49,4 +49,27 @@ class KeyLayoutsTest {
         assertEquals(" ", KeyLayouts.applyCaps(" ", true))
         assertEquals("?123", KeyLayouts.applyCaps("?123", true))
     }
+
+    @Test
+    fun enterBehavior_multiLineAlwaysNewLine() {
+        // Ids mirror EditorInfo.IME_ACTION_*: 0 = UNSPECIFIED, 2 = GO, 6 = DONE.
+        assertEquals(KeyLayouts.EnterBehavior.NEW_LINE, KeyLayouts.decideEnterBehavior(true, 0))
+        assertEquals(KeyLayouts.EnterBehavior.NEW_LINE, KeyLayouts.decideEnterBehavior(true, 2))
+        assertEquals(KeyLayouts.EnterBehavior.NEW_LINE, KeyLayouts.decideEnterBehavior(true, 6))
+    }
+
+    @Test
+    fun enterBehavior_singleLineActionTriesEditorAction() {
+        // 2 = GO, 3 = SEARCH, 4 = SEND, 5 = NEXT, 6 = DONE, 7 = PREVIOUS.
+        listOf(2, 3, 4, 5, 6, 7).forEach { action ->
+            assertEquals(KeyLayouts.EnterBehavior.EDITOR_ACTION, KeyLayouts.decideEnterBehavior(false, action))
+        }
+    }
+
+    @Test
+    fun enterBehavior_singleLineWithoutActionSendsKeyEvent() {
+        // 0 = UNSPECIFIED, 1 = NONE.
+        assertEquals(KeyLayouts.EnterBehavior.KEY_EVENT, KeyLayouts.decideEnterBehavior(false, 0))
+        assertEquals(KeyLayouts.EnterBehavior.KEY_EVENT, KeyLayouts.decideEnterBehavior(false, 1))
+    }
 }
