@@ -250,13 +250,12 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
                     client.processAudio(wav, languages, contextText, deviceId)
                 }
                 Log.d(TAG, "got status=" + res.httpCode + " elapsedMs=" + (SystemClock.elapsedRealtime() - started))
-                toast("got " + res.httpCode)
                 SendOutcome.Done(res.httpCode, ProcessResponseParser.parse(res.body))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Log.d(TAG, "fail " + e.javaClass.simpleName + " elapsedMs=" + (SystemClock.elapsedRealtime() - started))
-                toast("fail " + e.javaClass.simpleName)
+                toast(MSG_NO_CONNECTION)
                 SendOutcome.Failed
             } finally {
                 Arrays.fill(wav, 0)
@@ -268,7 +267,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
                     val resp = outcome.response
                     when {
                         outcome.code != 200 || resp == null ->
-                            toast("fail " + outcome.code)
+                            toast(MSG_BAD_RECORDING)
                         resp.action == null ->
                             toast("Nothing to change.")
                         resp.action.action == "insert" -> {
@@ -278,7 +277,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
                         else -> toast("Edit actions land in F6.")
                     }
                 }
-                SendOutcome.Failed -> toast("Voice send failed. Try again.")
+                SendOutcome.Failed -> toast(MSG_NO_CONNECTION)
             }
             // A newer recording owns the pill; don't clobber it.
             if (!recording) keyboardView?.showIdleBar()
@@ -314,5 +313,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
 
     companion object {
         private const val TAG = "VBOARD_NET"
+        private const val MSG_NO_CONNECTION = "No connection. Try again."
+        private const val MSG_BAD_RECORDING = "Couldn't use that recording. Try again."
     }
 }
