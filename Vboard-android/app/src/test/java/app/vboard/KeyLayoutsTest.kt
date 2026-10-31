@@ -25,4 +25,28 @@ class KeyLayoutsTest {
     fun spaceLabel_matchesDesignLanguage() {
         assertEquals("English (US)", KeyLayouts.SPACE_LABEL)
     }
+
+    @Test
+    fun rowMiddle_startsWithAWithoutShift() {
+        assertEquals("A", KeyLayouts.RowMiddle.first())
+        KeyLayouts.RowMiddle.forEach { key ->
+            assertTrue(key != KeyLayouts.KEY_SHIFT)
+            assertTrue(key != KeyLayouts.SHIFT_LABEL)
+            assertTrue(key != KeyLayouts.CAPS_LABEL)
+        }
+    }
+
+    @Test
+    fun applyCaps_togglesLetterCase() {
+        assertEquals("A", KeyLayouts.applyCaps("a", true))
+        assertEquals("a", KeyLayouts.applyCaps("A", false))
+        assertEquals("A", KeyLayouts.applyCaps("A", true))
+    }
+
+    @Test
+    fun applyCaps_leavesNonLettersAlone() {
+        assertEquals(",", KeyLayouts.applyCaps(",", true))
+        assertEquals(" ", KeyLayouts.applyCaps(" ", true))
+        assertEquals("?123", KeyLayouts.applyCaps("?123", true))
+    }
 }

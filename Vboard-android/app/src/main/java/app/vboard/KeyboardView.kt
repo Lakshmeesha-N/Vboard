@@ -27,10 +27,7 @@ class KeyboardView(context: Context) : LinearLayout(context) {
 
     private var topBar: TopBarView? = null
 
-    private enum class ShiftState { OFF, SHIFTED, CAPS }
-
-    private var shiftState = ShiftState.OFF
-    private var lastShiftTapMs: Long = 0
+    private var capsOn = false
     private var shiftKey: KeyButton? = null
 
     init {
@@ -53,7 +50,7 @@ class KeyboardView(context: Context) : LinearLayout(context) {
     }
 
     fun resetShift() {
-        shiftState = ShiftState.OFF
+        capsOn = false
         refreshShiftKey()
     }
 
@@ -69,14 +66,19 @@ class KeyboardView(context: Context) : LinearLayout(context) {
         }
         bottomRow += KeySpec(KeyLayouts.BACKSPACE_LABEL, 1.5f, true) { listener?.onBackspace() }
         addRow(bottomRow)
-        shiftKey = (getChildAt(3) as LinearLayout).getChildAt(0) as KeyButton
+        // Child 0 is the top bar, so the Shift row is at index 4.
+        shiftKey = (getChildAt(4) as LinearLayout).getChildAt(0) as KeyButton
+        refreshShiftKey()
 
         addRow(
             listOf(
                 KeySpec(KeyLayouts.KEY_SYMBOLS, 1.2f, true) { listener?.onSymbolsStub() },
-                KeySpec(KeyLayouts.GLOBE_LABEL, 0.9f, true) { listener?.onGlobe() },
                 KeySpec(KeyLayouts.KEY_COMMA, 0.9f, false) { onLetter(",") },
-                KeySpec(KeyLayouts.SPACE_LABEL, 4.2f, true, smallText = true) { onLetter(" ") },
+                KeySpec(
+                    KeyLayouts.SPACE_LABEL, 5.1f, true, smallText = true,
+                    fireOnDown = false,
+                    onLongPress = { listener?.onGlobe() },
+                ) { onLetter(" ") },
                 KeySpec(KeyLayouts.KEY_PERIOD, 0.9f, false) { onLetter(".") },
                 KeySpec(KeyLayouts.ENTER_LABEL, 1.6f, true, enterKey = true) { listener?.onEnter() },
             )
@@ -84,37 +86,20 @@ class KeyboardView(context: Context) : LinearLayout(context) {
     }
 
     private fun onLetter(base: String) {
-        val out = if (base.length == 1 && base[0].isLetter()) {
-            if (shiftState == ShiftState.OFF) base.lowercase() else base.uppercase()
-        } else {
-            base
-        }
-        listener?.onText(out)
-        if (shiftState == ShiftState.SHIFTED) {
-            shiftState = ShiftState.OFF
-            refreshShiftKey()
-        }
+        listener?.onText(KeyLayouts.applyCaps(base, capsOn))
     }
 
     private fun onShiftTap() {
-        val now = System.currentTimeMillis()
-        shiftState = when {
-            shiftState == ShiftState.OFF && now - lastShiftTapMs < DOUBLE_TAP_MS -> ShiftState.CAPS
-            shiftState == ShiftState.OFF -> ShiftState.SHIFTED
-            shiftState == ShiftState.SHIFTED && now - lastShiftTapMs < DOUBLE_TAP_MS -> ShiftState.CAPS
-            shiftState == ShiftState.SHIFTED -> ShiftState.OFF
-            else -> ShiftState.OFF
-        }
-        lastShiftTapMs = now
+        capsOn = !capsOn
         refreshShiftKey()
-        listener?.onShiftChanged(shiftState == ShiftState.CAPS)
+        listener?.onShiftChanged(capsOn)
     }
 
     private fun refreshShiftKey() {
         val key = shiftKey ?: return
-        key.text = if (shiftState == ShiftState.CAPS) KeyLayouts.CAPS_LABEL else KeyLayouts.SHIFT_LABEL
-        key.isSelected = shiftState != ShiftState.OFF
-        key.alpha = if (shiftState == ShiftState.OFF) 1f else 0.55f
+        key.text = if (capsOn) KeyLayouts.CAPS_LABEL else KeyLayouts.SHIFT_LABEL
+        key.isSelected = capsOn
+        key.setCapsOn(capsOn)
     }
 
     private data class KeySpec(
@@ -123,6 +108,8 @@ class KeyboardView(context: Context) : LinearLayout(context) {
         val modifier: Boolean,
         val smallText: Boolean = false,
         val enterKey: Boolean = false,
+        val fireOnDown: Boolean = true,
+        val onLongPress: (() -> Unit)? = null,
         val action: () -> Unit,
     )
 
@@ -143,8 +130,10 @@ class KeyboardView(context: Context) : LinearLayout(context) {
                 )
                 if (spec.enterKey) setTextColor(0xFF7DD3FC.toInt()) else setTextColor(0xFFFFFFFF.toInt())
                 onKeyDown = spec.action
+                onLongPress = spec.onLongPress
+                fireOnDown = spec.fireOnDown
                 val margin = dp(3)
-                layoutParams = LayoutParams(0, dp(KEY_HEIGHT_DP), spec.weight).apply {
+                layoutParams = LayoutParams(0, dp(KEY_ROW_HEIGHT_DP), spec.weight).apply {
                     setMargins(margin, margin, margin, margin)
                 }
             }
@@ -157,7 +146,6 @@ class KeyboardView(context: Context) : LinearLayout(context) {
         (value * resources.displayMetrics.density).toInt()
 
     companion object {
-        private const val KEY_HEIGHT_DP = 58
-        private const val DOUBLE_TAP_MS = 400L
+        private const val KEY_ROW_HEIGHT_DP = 44
     }
 }

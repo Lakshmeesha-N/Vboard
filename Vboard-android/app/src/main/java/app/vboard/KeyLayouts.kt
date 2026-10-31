@@ -9,7 +9,6 @@ object KeyLayouts {
     const val KEY_SHIFT = "SHIFT"
     const val KEY_BACKSPACE = "BACKSPACE"
     const val KEY_SYMBOLS = "?123"
-    const val KEY_GLOBE = "GLOBE"
     const val KEY_COMMA = ","
     const val KEY_SPACE = "SPACE"
     const val KEY_PERIOD = "."
@@ -20,5 +19,12 @@ object KeyLayouts {
     const val CAPS_LABEL = "⇪"
     const val BACKSPACE_LABEL = "⌫"
     const val ENTER_LABEL = "⏎"
-    const val GLOBE_LABEL = "🌐"
+
+    /** Toggle caps mapping kept pure for JVM tests; non-letters pass through. */
+    fun applyCaps(base: String, capsOn: Boolean): String {
+        if (base.length == 1 && base[0].isLetter()) {
+            return if (capsOn) base.uppercase() else base.lowercase()
+        }
+        return base
+    }
 }
