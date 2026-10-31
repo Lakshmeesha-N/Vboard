@@ -61,6 +61,22 @@ class KeyboardView(context: Context) : LinearLayout(context) {
         backspaceKey?.stopRepeat()
     }
 
+    fun showIdleBar() {
+        topBar?.showIdle()
+    }
+
+    fun showRecordingBar() {
+        topBar?.showRecording()
+    }
+
+    fun showProcessingBar() {
+        topBar?.showProcessing()
+    }
+
+    fun setRecordingAmplitude(raw: Float) {
+        topBar?.setAmplitude(raw)
+    }
+
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         ViewCompat.requestApplyInsets(this)
