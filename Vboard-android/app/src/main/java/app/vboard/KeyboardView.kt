@@ -12,6 +12,7 @@ class KeyboardView(context: Context) : LinearLayout(context) {
     interface Listener {
         fun onText(text: String)
         fun onBackspace()
+        fun onBackspaceRepeat(): Boolean
         fun onEnter()
         fun onShiftChanged(capsLock: Boolean)
         fun onGlobe()
@@ -29,6 +30,8 @@ class KeyboardView(context: Context) : LinearLayout(context) {
 
     private var capsOn = false
     private var shiftKey: KeyButton? = null
+    private var backspaceKey: KeyButton? = null
+    private val letterKeys = mutableListOf<KeyButton>()
 
     init {
         orientation = VERTICAL
@@ -54,20 +57,37 @@ class KeyboardView(context: Context) : LinearLayout(context) {
         refreshShiftKey()
     }
 
+    fun cancelKeyRepeats() {
+        backspaceKey?.stopRepeat()
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        ViewCompat.requestApplyInsets(this)
+    }
+
+    fun refreshInsets() {
+        ViewCompat.requestApplyInsets(this)
+    }
+
     private fun buildRows() {
         addRow(KeyLayouts.NumberRow.map { label -> KeySpec(label, 1f, false) { onLetter(label) } })
-        addRow(KeyLayouts.RowTop.map { label -> KeySpec(label, 1f, false) { onLetter(label) } })
-        addRow(KeyLayouts.RowMiddle.map { label -> KeySpec(label, 1f, false) { onLetter(label) } })
+        addRow(KeyLayouts.RowTop.map { label -> KeySpec(label, 1f, false, isLetter = true) { onLetter(label) } })
+        addRow(KeyLayouts.RowMiddle.map { label -> KeySpec(label, 1f, false, isLetter = true) { onLetter(label) } })
 
         val bottomRow = mutableListOf<KeySpec>()
         bottomRow += KeySpec(KeyLayouts.SHIFT_LABEL, 1.5f, true) { onShiftTap() }
         KeyLayouts.RowBottom.forEach { label ->
-            bottomRow += KeySpec(label, 1f, false) { onLetter(label) }
+            bottomRow += KeySpec(label, 1f, false, isLetter = true) { onLetter(label) }
         }
-        bottomRow += KeySpec(KeyLayouts.BACKSPACE_LABEL, 1.5f, true) { listener?.onBackspace() }
-        addRow(bottomRow)
-        // Child 0 is the top bar, so the Shift row is at index 4.
-        shiftKey = (getChildAt(4) as LinearLayout).getChildAt(0) as KeyButton
+        bottomRow += KeySpec(
+            KeyLayouts.BACKSPACE_LABEL, 1.5f, true,
+            repeatOnHold = true,
+            onRepeat = { listener?.onBackspaceRepeat() == true },
+        ) { listener?.onBackspace() }
+        val shiftRow = addRow(bottomRow)
+        shiftKey = shiftRow.first()
+        backspaceKey = shiftRow.last()
         refreshShiftKey()
 
         addRow(
@@ -100,6 +120,7 @@ class KeyboardView(context: Context) : LinearLayout(context) {
         key.text = if (capsOn) KeyLayouts.CAPS_LABEL else KeyLayouts.SHIFT_LABEL
         key.isSelected = capsOn
         key.setCapsOn(capsOn)
+        letterKeys.forEach { it.text = KeyLayouts.applyCaps(it.tag as String, capsOn) }
     }
 
     private data class KeySpec(
@@ -108,17 +129,21 @@ class KeyboardView(context: Context) : LinearLayout(context) {
         val modifier: Boolean,
         val smallText: Boolean = false,
         val enterKey: Boolean = false,
+        val isLetter: Boolean = false,
         val fireOnDown: Boolean = true,
+        val repeatOnHold: Boolean = false,
         val onLongPress: (() -> Unit)? = null,
+        val onRepeat: (() -> Boolean)? = null,
         val action: () -> Unit,
     )
 
-    private fun addRow(keys: List<KeySpec>) {
+    private fun addRow(keys: List<KeySpec>): List<KeyButton> {
         val row = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER
             layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
         }
+        val buttons = mutableListOf<KeyButton>()
         keys.forEach { spec ->
             val key = KeyButton(context).apply {
                 text = spec.label
@@ -132,14 +157,20 @@ class KeyboardView(context: Context) : LinearLayout(context) {
                 onKeyDown = spec.action
                 onLongPress = spec.onLongPress
                 fireOnDown = spec.fireOnDown
+                repeatOnHold = spec.repeatOnHold
+                onRepeat = spec.onRepeat
+                if (spec.isLetter) tag = spec.label
                 val margin = dp(3)
                 layoutParams = LayoutParams(0, dp(KEY_ROW_HEIGHT_DP), spec.weight).apply {
                     setMargins(margin, margin, margin, margin)
                 }
             }
+            if (spec.isLetter) letterKeys += key
             row.addView(key)
+            buttons += key
         }
         addView(row)
+        return buttons
     }
 
     private fun dp(value: Int): Int =

@@ -5,12 +5,18 @@ import android.os.Build
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.Toast
+import androidx.core.view.WindowCompat
 
 class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.Listener {
 
     private var keyboardView: KeyboardView? = null
     private var editor: TextBoxEditor? = null
     private var imeOptions: Int = EditorInfo.IME_NULL
+
+    override fun onCreate() {
+        super.onCreate()
+        window?.window?.let { WindowCompat.setDecorFitsSystemWindows(it, false) }
+    }
 
     override fun onCreateInputView(): View {
         editor = TextBoxEditor { currentInputConnection }
@@ -24,10 +30,12 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         imeOptions = info?.imeOptions ?: EditorInfo.IME_NULL
+        keyboardView?.refreshInsets()
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
+        keyboardView?.cancelKeyRepeats()
         keyboardView?.resetShift()
     }
 
@@ -45,6 +53,13 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
 
     override fun onBackspace() {
         editor?.deleteCodePointBefore()
+    }
+
+    override fun onBackspaceRepeat(): Boolean {
+        val ed = editor ?: return false
+        val keepGoing = KeyLayouts.RepeatTiming.shouldContinue(ed.hasTextBeforeCursor())
+        if (keepGoing) ed.deleteCodePointBefore()
+        return keepGoing
     }
 
     override fun onEnter() {
