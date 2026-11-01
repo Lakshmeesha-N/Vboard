@@ -137,7 +137,7 @@ Use this map first, don't search the whole project. After each feature, update t
 Planned blocks (rename if you must, but keep the map true):
 - KeyboardService: the InputMethodService, connects the other blocks
 - KeyboardView / KeyLayouts / KeyButton: keys and layouts (key row height: KEY_ROW_HEIGHT_DP = 51)
-- TopBarView: idle bar and recording pill
+- TopBarView: idle bar, recording pill, agent Working row (never the pill)
 - VoiceBarsDrawable: white 5-bar voice icon drawable (used by TopBarView)
 - WaveformView: the live dotted wave
 - Recorder: AudioRecord to in-memory WAV
