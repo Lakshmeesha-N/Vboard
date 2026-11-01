@@ -17,13 +17,13 @@ async def handle_agent(payload: AgentRequest) -> AgentResponse:
         validate_device_id(payload.device_id)
     except InvalidRequestError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         )
 
     if len(payload.content) > 10000:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Content exceeds 10000 characters limit",
         )
 
