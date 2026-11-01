@@ -30,6 +30,11 @@ class KeyboardView(context: Context) : LinearLayout(context) {
 
     private var capsOn = false
     private var symbolsOn = false
+    private var symbolsTogglePending = false
+    private val symbolsToggleRunnable = Runnable {
+        symbolsTogglePending = false
+        listener?.onSymbolsToggle()
+    }
     private var shiftKey: KeyButton? = null
     private var backspaceKey: KeyButton? = null
     private val letterKeys = mutableListOf<KeyButton>()
@@ -72,6 +77,8 @@ class KeyboardView(context: Context) : LinearLayout(context) {
     }
 
     private fun rebuildKeys() {
+        removeCallbacks(symbolsToggleRunnable)
+        symbolsTogglePending = false
         cancelKeyRepeats()
         while (childCount > 1) removeViewAt(1)
         letterKeys.clear()
@@ -146,7 +153,7 @@ class KeyboardView(context: Context) : LinearLayout(context) {
                 KeySpec(
                     if (symbolsOn) KeyLayouts.KEY_ABC else KeyLayouts.KEY_SYMBOLS,
                     1.2f, true,
-                ) { listener?.onSymbolsToggle() },
+                ) { onSymbolsTap() },
                 KeySpec(KeyLayouts.KEY_COMMA, 0.9f, false) { onLetter(",") },
                 KeySpec(
                     KeyLayouts.SPACE_LABEL, 5.1f, true, smallText = true,
@@ -168,6 +175,24 @@ class KeyboardView(context: Context) : LinearLayout(context) {
         capsOn = !capsOn
         refreshShiftKey()
         listener?.onShiftChanged(capsOn)
+    }
+
+    /**
+     * The toggle rebuild destroys the pressed key in the same frame, so its
+     * highlight would never paint. Wait one short beat so the tap visibly
+     * lights the key up, then swap layers. Double-taps while one is pending
+     * are ignored (single-flight).
+     */
+    private fun onSymbolsTap() {
+        if (symbolsTogglePending) return
+        symbolsTogglePending = true
+        postDelayed(symbolsToggleRunnable, SYMBOLS_TOGGLE_DELAY_MS)
+    }
+
+    override fun onDetachedFromWindow() {
+        removeCallbacks(symbolsToggleRunnable)
+        symbolsTogglePending = false
+        super.onDetachedFromWindow()
     }
 
     private fun refreshShiftKey() {
@@ -237,6 +262,8 @@ class KeyboardView(context: Context) : LinearLayout(context) {
 
     companion object {
         private const val KEY_ROW_HEIGHT_DP = 51
+        /** Beat between ?123/ABC tap highlight and the layer swap. */
+        private const val SYMBOLS_TOGGLE_DELAY_MS = 120L
         // Letters + numbers, bumped for visibility (was 19sp). Modifiers stay
         // one step smaller so ?123 never clips its narrow key. Spacebar label
         // stays smallest. Heights/widths/spacing unchanged.
