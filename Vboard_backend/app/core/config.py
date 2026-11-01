@@ -80,6 +80,12 @@ class Settings(BaseSettings):
         description="Reasoning effort level for Spark Chat Completions",
     )
 
+    # Agent settings
+    AGENT_SEARCH_ENABLED: bool = Field(
+        default=True,
+        description="Enable web search in agent branch",
+    )
+
     # Provider API keys (optional fallback / multi-provider support)
     SARVAM_API_KEY: Optional[str] = None
     GEMINI_API_KEY: Optional[str] = None
