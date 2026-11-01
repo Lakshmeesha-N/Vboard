@@ -15,3 +15,4 @@ class AgentResponse(BaseModel):
     rounds: int
     note: Optional[str] = None
     timing_ms: float
+
