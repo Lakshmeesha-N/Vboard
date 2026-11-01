@@ -31,6 +31,7 @@ class TopBarView @JvmOverloads constructor(
 
     private val idleRow: LinearLayout
     private val pill: LinearLayout
+    private val agentRow: LinearLayout
     private val wave: WaveformView
     private val timerText: TextView
     private var undoButton: TextView? = null
@@ -111,11 +112,33 @@ class TopBarView @JvmOverloads constructor(
             listener?.onConfirm()
         }.also { pill.addView(it) }
         addView(pill)
+
+        // Agent round-trip status: deliberately NOT the recording pill (no wave,
+        // no ✕/✓) so a ring tap can never look like recording started.
+        agentRow = LinearLayout(context).apply {
+            orientation = HORIZONTAL
+            gravity = Gravity.CENTER
+            background = ContextCompat.getDrawable(context, R.drawable.recording_pill_background)
+            val pad = dp(6)
+            setPadding(pad, dp(8), pad, dp(8))
+            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
+            visibility = GONE
+            isFocusable = false
+        }
+        agentRow.addView(TextView(context).apply {
+            text = "Working..."
+            setTextColor(0xFF9AA0A6.toInt())
+            textSize = 13f
+            gravity = Gravity.CENTER
+            isFocusable = false
+        })
+        addView(agentRow)
     }
 
     fun showIdle() {
         idleRow.visibility = VISIBLE
         pill.visibility = GONE
+        agentRow.visibility = GONE
         stopTimer()
         setPillEnabled(true)
         wave.reset()
@@ -123,6 +146,7 @@ class TopBarView @JvmOverloads constructor(
 
     fun showRecording() {
         idleRow.visibility = GONE
+        agentRow.visibility = GONE
         pill.visibility = VISIBLE
         setPillEnabled(true)
         wave.reset()
@@ -131,18 +155,19 @@ class TopBarView @JvmOverloads constructor(
 
     fun showProcessing() {
         idleRow.visibility = GONE
+        agentRow.visibility = GONE
         pill.visibility = VISIBLE
         stopTimer()
         setPillEnabled(false)
     }
 
-    /** Agent round-trip: same dimmed pill, timer slot shows status instead. */
+    /** Agent round-trip: status row only. Never touches the recording pill. */
     fun showAgentWorking() {
         idleRow.visibility = GONE
-        pill.visibility = VISIBLE
+        pill.visibility = GONE
         stopTimer()
-        setPillEnabled(false)
-        timerText.text = "Working..."
+        wave.reset()
+        agentRow.visibility = VISIBLE
     }
 
     /** Undo is visible only in the idle bar, after an AI edit. */

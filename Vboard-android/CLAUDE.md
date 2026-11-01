@@ -116,7 +116,7 @@ Do **ONE** item per run in this order:
 - **F5. Backend Client + INSERT:** Read `contract/openapi.json`, build `OkHttp` multipart client, wire `insert` end-to-end.
 - **F6. Action Engine & Undo:** Pure function `applyAction(box, action)` with JVM unit tests (insert, rewrite, replace first/last/all, ignore case, not found = no change, Kannada text, empty box). Wire rewrite, replace, and top-bar Undo button.
 - **F7. Errors & Safety:** Password field lockout, missing permission prompt, network/HTTP error messages (`400`, `413`, `429`, `502`, offline, timeout).
-- **F8. Ring AI Cleanup:** Ring sends full box as `{content, device_id}` to `POST /v1/agent` (never `languages`), replaces whole box via F6 rewrite + Undo. Empty → "Nothing to clean up"; `out_of_scope` → "Can't do that"; 422 → detail; same → "Nothing changed"; password → noop; "Working..." + 5s/25s + single-flight.
+- **F8. Ring AI Cleanup (one-shot, never records):** Ring tap sends the full box as `{content, device_id}` to `POST /v1/agent` (never `languages`, never `Recorder`) and replaces the whole box via F6 rewrite + Undo. One request at a time, no conversation. Backend routes: text starting with `@agent` → agentic task, anything else → cleanup/correct only. `Working...` is a dedicated status row, never the recording pill. Empty → "Nothing to clean up"; `out_of_scope` → "Can't do that"; 422 → detail; same → "Nothing changed"; password/recording → noop; 5s/25s timeouts.
 - **F9. Polish & Docs:** Visual check against `design/image.png` and `design/image1.png`, dark theme polish, and `README.md` (`Built by us` and `Dependencies`).
 
 ### After Every Feature

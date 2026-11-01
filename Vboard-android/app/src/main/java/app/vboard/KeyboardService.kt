@@ -162,7 +162,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
     }
 
     override fun onAiClick() {
-        if (sending) return
+        if (sending || recording) return
         val ed = editor ?: return
         val inputType = currentInputEditorInfo?.inputType ?: EditorInfo.TYPE_NULL
         if (ContextPolicy.isPasswordInputType(inputType)) return
