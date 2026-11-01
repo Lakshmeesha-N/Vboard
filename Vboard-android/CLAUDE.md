@@ -116,7 +116,7 @@ Do **ONE** item per run in this order:
 - **F5. Backend Client + INSERT:** Read `contract/openapi.json`, build `OkHttp` multipart client, wire `insert` end-to-end.
 - **F6. Action Engine & Undo:** Pure function `applyAction(box, action)` with JVM unit tests (insert, rewrite, replace first/last/all, ignore case, not found = no change, Kannada text, empty box). Wire rewrite, replace, and top-bar Undo button.
 - **F7. Errors & Safety:** Password field lockout, missing permission prompt, network/HTTP error messages (`400`, `413`, `429`, `502`, offline, timeout).
-- **F8. Style Chips & Cleanup:** Wire AI button and chips (Shorter, Professional, Translate). **BLOCKED** until backend `/v1/edit` exists—ask user first.
+- **F8. Ring AI Cleanup:** Ring sends full box as `{content, device_id}` to `POST /v1/agent` (never `languages`), replaces whole box via F6 rewrite + Undo. Empty → "Nothing to clean up"; `out_of_scope` → "Can't do that"; 422 → detail; same → "Nothing changed"; password → noop; "Working..." + 5s/25s + single-flight.
 - **F9. Polish & Docs:** Visual check against `design/image.png` and `design/image1.png`, dark theme polish, and `README.md` (`Built by us` and `Dependencies`).
 
 ### After Every Feature
@@ -142,8 +142,9 @@ Planned blocks (rename if you must, but keep the map true):
 - WaveformView: the live dotted wave
 - Recorder: AudioRecord to in-memory WAV
 - WavBuilder: WAV header (pure Kotlin, unit tested)
-- BackendClient: OkHttp call to /v1/process
+- BackendClient: OkHttp calls to /v1/process (multipart) + /v1/agent (JSON content+device_id, 5s/25s)
 - ProcessResponse: response models + pure org.json parser (unit tested)
+- AgentResponse: /v1/agent model + pure org.json parser + 422 detail (unit tested)
 - ContextPolicy: password-field check + context cap (pure Kotlin, unit tested)
 - ActionApplier: applyAction logic (pure Kotlin, unit tested)
 - TextBoxEditor: reads and writes the textbox through the input connection

@@ -16,7 +16,7 @@ class KeyboardView(context: Context) : LinearLayout(context) {
         fun onEnter()
         fun onShiftChanged(capsLock: Boolean)
         fun onGlobe()
-        fun onSymbolsStub()
+        fun onSymbolsToggle()
     }
 
     var listener: Listener? = null
@@ -29,6 +29,7 @@ class KeyboardView(context: Context) : LinearLayout(context) {
     private var topBar: TopBarView? = null
 
     private var capsOn = false
+    private var symbolsOn = false
     private var shiftKey: KeyButton? = null
     private var backspaceKey: KeyButton? = null
     private val letterKeys = mutableListOf<KeyButton>()
@@ -57,6 +58,28 @@ class KeyboardView(context: Context) : LinearLayout(context) {
         refreshShiftKey()
     }
 
+    fun toggleSymbols() {
+        symbolsOn = !symbolsOn
+        if (symbolsOn) capsOn = false
+        rebuildKeys()
+    }
+
+    fun showLetters() {
+        if (!symbolsOn) return
+        symbolsOn = false
+        capsOn = false
+        rebuildKeys()
+    }
+
+    private fun rebuildKeys() {
+        cancelKeyRepeats()
+        while (childCount > 1) removeViewAt(1)
+        letterKeys.clear()
+        shiftKey = null
+        backspaceKey = null
+        buildRows()
+    }
+
     fun cancelKeyRepeats() {
         backspaceKey?.stopRepeat()
     }
@@ -71,6 +94,10 @@ class KeyboardView(context: Context) : LinearLayout(context) {
 
     fun showProcessingBar() {
         topBar?.showProcessing()
+    }
+
+    fun showAgentWorkingBar() {
+        topBar?.showAgentWorking()
     }
 
     fun setRecordingAmplitude(raw: Float) {
@@ -92,13 +119,17 @@ class KeyboardView(context: Context) : LinearLayout(context) {
 
     private fun buildRows() {
         addRow(KeyLayouts.NumberRow.map { label -> KeySpec(label, 1f, false) { onLetter(label) } })
-        addRow(KeyLayouts.RowTop.map { label -> KeySpec(label, 1f, false, isLetter = true) { onLetter(label) } })
-        addRow(KeyLayouts.RowMiddle.map { label -> KeySpec(label, 1f, false, isLetter = true) { onLetter(label) } })
+        val topLabels = if (symbolsOn) KeyLayouts.SymbolRowTop else KeyLayouts.RowTop
+        val midLabels = if (symbolsOn) KeyLayouts.SymbolRowMiddle else KeyLayouts.RowMiddle
+        val botLabels = if (symbolsOn) KeyLayouts.SymbolRowBottom else KeyLayouts.RowBottom
+        val letterLayer = !symbolsOn
+        addRow(topLabels.map { label -> KeySpec(label, 1f, false, isLetter = letterLayer) { onLetter(label) } })
+        addRow(midLabels.map { label -> KeySpec(label, 1f, false, isLetter = letterLayer) { onLetter(label) } })
 
         val bottomRow = mutableListOf<KeySpec>()
         bottomRow += KeySpec(KeyLayouts.SHIFT_LABEL, 1.5f, true) { onShiftTap() }
-        KeyLayouts.RowBottom.forEach { label ->
-            bottomRow += KeySpec(label, 1f, false, isLetter = true) { onLetter(label) }
+        botLabels.forEach { label ->
+            bottomRow += KeySpec(label, 1f, false, isLetter = letterLayer) { onLetter(label) }
         }
         bottomRow += KeySpec(
             KeyLayouts.BACKSPACE_LABEL, 1.5f, true,
@@ -112,7 +143,10 @@ class KeyboardView(context: Context) : LinearLayout(context) {
 
         addRow(
             listOf(
-                KeySpec(KeyLayouts.KEY_SYMBOLS, 1.2f, true) { listener?.onSymbolsStub() },
+                KeySpec(
+                    if (symbolsOn) KeyLayouts.KEY_ABC else KeyLayouts.KEY_SYMBOLS,
+                    1.2f, true,
+                ) { listener?.onSymbolsToggle() },
                 KeySpec(KeyLayouts.KEY_COMMA, 0.9f, false) { onLetter(",") },
                 KeySpec(
                     KeyLayouts.SPACE_LABEL, 5.1f, true, smallText = true,
@@ -130,6 +164,7 @@ class KeyboardView(context: Context) : LinearLayout(context) {
     }
 
     private fun onShiftTap() {
+        if (symbolsOn) return
         capsOn = !capsOn
         refreshShiftKey()
         listener?.onShiftChanged(capsOn)

@@ -67,6 +67,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
         super.onStartInputView(info, restarting)
         imeOptions = info?.imeOptions ?: EditorInfo.IME_NULL
         clearUndo()
+        keyboardView?.showLetters()
         keyboardView?.refreshInsets()
     }
 
@@ -74,6 +75,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
         super.onFinishInputView(finishingInput)
         keyboardView?.cancelKeyRepeats()
         keyboardView?.resetShift()
+        keyboardView?.showLetters()
         stopRecordingSilently()
         cancelSend()
         clearUndo()
@@ -126,8 +128,8 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
         }
     }
 
-    override fun onSymbolsStub() {
-        Toast.makeText(this, "Symbols in F2", Toast.LENGTH_SHORT).show()
+    override fun onSymbolsToggle() {
+        keyboardView?.toggleSymbols()
     }
 
     override fun onVoiceClick() {
@@ -160,7 +162,27 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
     }
 
     override fun onAiClick() {
-        Toast.makeText(this, "AI actions land in F8", Toast.LENGTH_SHORT).show()
+        if (sending) return
+        val ed = editor ?: return
+        val inputType = currentInputEditorInfo?.inputType ?: EditorInfo.TYPE_NULL
+        if (ContextPolicy.isPasswordInputType(inputType)) return
+        val current = ed.readFullText(inputType, ContextPolicy.CONTEXT_MAX_CHARS)
+        if (!current.reliable) {
+            toast(MSG_SELECTION_UNSURE)
+            return
+        }
+        val full = current.full
+        if (full.isEmpty()) {
+            toast(MSG_NOTHING_TO_CLEAN)
+            return
+        }
+        if (ActionApplier.isTooLong(full)) {
+            toast(MSG_TOO_LONG)
+            return
+        }
+        snapshotFull = full
+        keyboardView?.showAgentWorkingBar()
+        sendAgentToBackend(store(), full)
     }
 
     override fun onCancel() {
@@ -402,6 +424,96 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
         sending = false
     }
 
+    private fun sendAgentToBackend(store: SettingsStore, content: String) {
+        if (sending) return
+        sending = true
+        val url = store.getBackendUrl()
+        if (backend == null || lastBackendUrl != url) {
+            backend = BackendClient(url)
+            lastBackendUrl = url
+        }
+        val client = backend
+        if (client == null) {
+            sending = false
+            keyboardView?.showIdleBar()
+            return
+        }
+        val deviceId = store.getDeviceId()
+        // TEMPORARY debug: numbers only, never user text.
+        Log.d(TAG, "agent send chars=" + content.length + " host=" + Uri.parse(url).host)
+        sendJob?.cancel()
+        sendJob = serviceScope.launch {
+            val started = SystemClock.elapsedRealtime()
+            val outcome: AgentOutcome = try {
+                val res = withContext(Dispatchers.IO) {
+                    client.agent(content, deviceId)
+                }
+                Log.d(TAG, "agent got status=" + res.httpCode + " elapsedMs=" + (SystemClock.elapsedRealtime() - started))
+                if (res.httpCode == 422) {
+                    AgentOutcome.Done(res.httpCode, null, AgentResponseParser.parseErrorDetail(res.body))
+                } else {
+                    AgentOutcome.Done(res.httpCode, AgentResponseParser.parse(res.body), null)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.d(TAG, "agent fail " + e.javaClass.simpleName + " elapsedMs=" + (SystemClock.elapsedRealtime() - started))
+                AgentOutcome.Failed
+            }
+            sending = false
+            sendJob = null
+            when (outcome) {
+                is AgentOutcome.Done -> {
+                    when {
+                        outcome.code == 422 -> toast(outcome.errorDetail ?: MSG_AGENT_FAILED)
+                        outcome.code != 200 || outcome.response == null -> toast(MSG_AGENT_FAILED)
+                        outcome.response.note == "out_of_scope" -> toast(MSG_CANT_DO)
+                        outcome.response.text.isEmpty() -> toast(MSG_AGENT_FAILED)
+                        else -> applyAgentRewrite(outcome.response.text)
+                    }
+                }
+                AgentOutcome.Failed -> toast(MSG_NO_CONNECTION)
+            }
+            // A newer recording owns the pill; don't clobber it.
+            if (!recording) keyboardView?.showIdleBar()
+        }
+    }
+
+    private fun applyAgentRewrite(newText: String) {
+        val ed = editor ?: return
+        val inputType = currentInputEditorInfo?.inputType ?: EditorInfo.TYPE_NULL
+        val current = ed.readFullText(inputType, ContextPolicy.CONTEXT_MAX_CHARS)
+        if (!current.reliable) {
+            toast(MSG_SELECTION_UNSURE)
+            return
+        }
+        if (ActionApplier.isTooLong(current.full)) {
+            toast(MSG_TOO_LONG)
+            return
+        }
+        if (current.full != snapshotFull) {
+            toast(MSG_TEXT_CHANGED)
+            return
+        }
+        if (current.full == newText) {
+            toast(MSG_NOTHING_CHANGED)
+            return
+        }
+        if (current.selected.isNotEmpty() && !ed.collapseSelectionTo(current.endCharIndex)) {
+            toast(MSG_SELECTION_UNSURE)
+            return
+        }
+        val beforeCp = ed.codePointCount(current.before + current.selected)
+        val afterCp = ed.codePointCount(current.after)
+        val prev = current.full
+        if (!ed.rewriteFull(beforeCp, afterCp, newText)) {
+            toast(MSG_SELECTION_UNSURE)
+            return
+        }
+        showUndo(prev)
+        toast(MSG_REWRITTEN)
+    }
+
     private fun store(): SettingsStore =
         settings ?: SettingsStore(this).also { settings = it }
 
@@ -422,6 +534,11 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
         data class Done(val code: Int, val response: ProcessResponse?) : SendOutcome
     }
 
+    private sealed interface AgentOutcome {
+        data object Failed : AgentOutcome
+        data class Done(val code: Int, val response: AgentResponse?, val errorDetail: String?) : AgentOutcome
+    }
+
     companion object {
         private const val TAG = "VBOARD_NET"
         private const val MSG_NO_CONNECTION = "No connection. Try again."
@@ -435,5 +552,8 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
         private const val MSG_TOO_LONG = "Text too long to edit"
         private const val MSG_TEXT_CHANGED = "Text changed. Kept current text."
         private const val MSG_SELECTION_UNSURE = "Couldn't replace selected text. Kept current text."
+        private const val MSG_NOTHING_TO_CLEAN = "Nothing to clean up"
+        private const val MSG_CANT_DO = "Can't do that"
+        private const val MSG_AGENT_FAILED = "Couldn't clean up. Try again."
     }
 }

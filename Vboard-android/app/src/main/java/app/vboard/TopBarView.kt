@@ -136,6 +136,15 @@ class TopBarView @JvmOverloads constructor(
         setPillEnabled(false)
     }
 
+    /** Agent round-trip: same dimmed pill, timer slot shows status instead. */
+    fun showAgentWorking() {
+        idleRow.visibility = GONE
+        pill.visibility = VISIBLE
+        stopTimer()
+        setPillEnabled(false)
+        timerText.text = "Working..."
+    }
+
     /** Undo is visible only in the idle bar, after an AI edit. */
     fun setUndoVisible(visible: Boolean) {
         undoButton?.visibility = if (visible) VISIBLE else GONE
