@@ -88,6 +88,23 @@ class KeyLayoutsTest {
     }
 
     @Test
+    fun symbolRows_mirrorLetterRowCounts() {
+        assertEquals(KeyLayouts.RowTop.size, KeyLayouts.SymbolRowTop.size)
+        assertEquals(KeyLayouts.RowMiddle.size, KeyLayouts.SymbolRowMiddle.size)
+        assertEquals(KeyLayouts.RowBottom.size, KeyLayouts.SymbolRowBottom.size)
+    }
+
+    @Test
+    fun symbolKeys_passThroughCapsAndIncludeAt() {
+        assertTrue(KeyLayouts.SymbolRowTop.contains("@"))
+        (KeyLayouts.SymbolRowTop + KeyLayouts.SymbolRowMiddle + KeyLayouts.SymbolRowBottom).forEach { key ->
+            assertEquals(key, KeyLayouts.applyCaps(key, true))
+            assertEquals(key, KeyLayouts.applyCaps(key, false))
+        }
+        assertEquals("ABC", KeyLayouts.KEY_ABC)
+        assertEquals("?123", KeyLayouts.KEY_SYMBOLS)
+    }
+    @Test
     fun repeatTiming_firstTickWaitsThenRepeatsFast() {
         assertEquals(400L, KeyLayouts.RepeatTiming.delayForTick(0))
         assertEquals(50L, KeyLayouts.RepeatTiming.delayForTick(1))

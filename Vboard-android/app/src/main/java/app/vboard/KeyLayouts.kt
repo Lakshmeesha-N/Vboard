@@ -6,9 +6,15 @@ object KeyLayouts {
     val RowMiddle = listOf("A", "S", "D", "F", "G", "H", "J", "K", "L")
     val RowBottom = listOf("Z", "X", "C", "V", "B", "N", "M")
 
+    /** Symbols layer rows; counts mirror the letter rows so weights stay identical. */
+    val SymbolRowTop = listOf("@", "#", "$", "%", "&", "*", "-", "+", "(", ")")
+    val SymbolRowMiddle = listOf("!", "\"", "'", ":", ";", "/", "?", "_", "=")
+    val SymbolRowBottom = listOf("<", ">", "{", "}", "[", "]", "~")
+
     const val KEY_SHIFT = "SHIFT"
     const val KEY_BACKSPACE = "BACKSPACE"
     const val KEY_SYMBOLS = "?123"
+    const val KEY_ABC = "ABC"
     const val KEY_COMMA = ","
     const val KEY_SPACE = "SPACE"
     const val KEY_PERIOD = "."
