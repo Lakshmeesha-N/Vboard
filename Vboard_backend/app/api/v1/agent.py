@@ -27,10 +27,22 @@ async def handle_agent(payload: AgentRequest) -> AgentResponse:
             detail="Content exceeds 10000 characters limit",
         )
 
+    if not payload.content or not payload.content.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Nothing to process",
+        )
+
     parsed_languages = parse_languages(payload.languages)
     languages_str = ",".join(parsed_languages) if parsed_languages else None
 
     if agent_service.route(payload.content) == "agent":
+        task, _ = agent_service.parse_agent_block(payload.content)
+        if not task.strip():
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Type what you want after @agent",
+            )
         res = await agent_service.agent_branch(
             payload.content, languages=languages_str
         )

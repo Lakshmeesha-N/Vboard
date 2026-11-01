@@ -16,6 +16,38 @@ def anyio_backend():
     return "asyncio"
 
 
+def _tool_call(call_id: str, query: str) -> MagicMock:
+    tc = MagicMock()
+    tc.id = call_id
+    tc.function.name = "web_search"
+    tc.function.arguments = json.dumps({"query": query})
+    return tc
+
+
+def _llm_text(text: str) -> LLMResult:
+    return LLMResult(
+        text=text,
+        elapsed_ms=10.0,
+        prompt_tokens=5,
+        completion_tokens=5,
+        cached_tokens=0,
+        reasoning_tokens=0,
+        tool_calls=[],
+    )
+
+
+def _llm_tool_call(call_id: str, query: str) -> LLMResult:
+    return LLMResult(
+        text="",
+        elapsed_ms=10.0,
+        prompt_tokens=5,
+        completion_tokens=5,
+        cached_tokens=0,
+        reasoning_tokens=0,
+        tool_calls=[_tool_call(call_id, query)],
+    )
+
+
 @pytest.mark.asyncio
 async def test_cleanup_default():
     """Normal text without @agent routes to cleanup, returns corrected text."""
@@ -87,39 +119,50 @@ async def test_cleanup_translate():
 
 
 @pytest.mark.asyncio
-async def test_agent_empty_task():
-    """@agent alone returns 'Please describe your task.' with 200 OK."""
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://test"
-    ) as client:
-        resp = await client.post(
-            "/v1/agent",
-            json={"content": "@agent"},
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["text"] == "Please describe your task."
-        assert data["used_search"] is False
-        assert data["rounds"] == 0
-        assert data["note"] is None
-        assert data["timing_ms"] == 0.0
+async def test_agent_alone_gives_422():
+    """@agent alone (or only spaces after it) returns 422 with no LLM call."""
+    with patch(
+        "app.services.llm_service.complete_messages",
+        new=AsyncMock(side_effect=AssertionError("LLM must not be called")),
+    ):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
+            for content in ("@agent", "@agent   ", "  @agent  "):
+                resp = await client.post("/v1/agent", json={"content": content})
+                assert resp.status_code == 422
+                assert (
+                    resp.json()["detail"] == "Type what you want after @agent"
+                )
+
+
+@pytest.mark.asyncio
+async def test_empty_content_gives_422():
+    """Empty or whitespace-only content returns 422 with no LLM call."""
+    with patch(
+        "app.services.llm_service.complete",
+        new=AsyncMock(side_effect=AssertionError("LLM must not be called")),
+    ), patch(
+        "app.services.llm_service.complete_messages",
+        new=AsyncMock(side_effect=AssertionError("LLM must not be called")),
+    ):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
+            for content in ("", "   "):
+                resp = await client.post("/v1/agent", json={"content": content})
+                assert resp.status_code == 422
+                assert resp.json()["detail"] == "Nothing to process"
 
 
 @pytest.mark.asyncio
 async def test_agent_generates_text():
     """@agent\\nTask returns generated text without search."""
-    mock_choice = MagicMock()
-    mock_choice.message.content = "Wishing you a fantastic 30th birthday, Anil!"
-    mock_choice.message.tool_calls = None
-    mock_resp = MagicMock(choices=[mock_choice])
-
-    mock_client = MagicMock()
-    mock_client.chat.completions.create = AsyncMock(return_value=mock_resp)
-
     with patch(
-        "app.services.agent_service.get_llm_client",
-        return_value=mock_client,
+        "app.services.llm_service.complete_messages",
+        new=AsyncMock(return_value=_llm_text("Happy birthday, Anil!")),
     ):
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(
@@ -133,29 +176,46 @@ async def test_agent_generates_text():
             )
             assert resp.status_code == 200
             data = resp.json()
-            assert (
-                data["text"] == "Wishing you a fantastic 30th birthday, Anil!"
-            )
+            assert data["text"] == "Happy birthday, Anil!"
             assert data["used_search"] is False
             assert data["rounds"] == 1
 
 
 @pytest.mark.asyncio
+async def test_out_of_scope_returns_original():
+    """Model marker returns the original content unchanged with note."""
+    original = "@agent\nTurn this water into wine by tomorrow"
+    with patch(
+        "app.services.llm_service.complete_messages",
+        new=AsyncMock(return_value=_llm_text("x [[OUT_OF_SCOPE]] y")),
+    ):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
+            resp = await client.post("/v1/agent", json={"content": original})
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["text"] == original
+            assert data["note"] == "out_of_scope"
+            assert "[[OUT_OF_SCOPE]]" not in data["text"]
+
+
+@pytest.mark.asyncio
 async def test_agent_search_disabled(monkeypatch):
-    """When AGENT_SEARCH_ENABLED=False, no tools are passed or invoked."""
+    """When AGENT_SEARCH_ENABLED=False, no tools key is sent."""
     monkeypatch.setattr(settings, "AGENT_SEARCH_ENABLED", False)
 
-    mock_choice = MagicMock()
-    mock_choice.message.content = "Python is a versatile programming language."
-    mock_choice.message.tool_calls = None
-    mock_resp = MagicMock(choices=[mock_choice])
-
+    choice = MagicMock()
+    choice.message.content = "Python is a versatile programming language."
+    choice.message.tool_calls = None
+    mock_resp = MagicMock(choices=[choice])
+    mock_resp.usage = None
     mock_client = MagicMock()
     mock_client.chat.completions.create = AsyncMock(return_value=mock_resp)
 
     with patch(
-        "app.services.agent_service.get_llm_client",
-        return_value=mock_client,
+        "app.services.llm_service.get_llm_client", return_value=mock_client
     ):
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(
@@ -173,37 +233,94 @@ async def test_agent_search_disabled(monkeypatch):
             assert data["used_search"] is False
             assert data["rounds"] == 1
 
-            # Verify no tools were passed to the completions endpoint
             kwargs = mock_client.chat.completions.create.call_args[1]
-            assert "tools" not in kwargs or kwargs["tools"] is None
+            assert "tools" not in kwargs
+
+
+@pytest.mark.asyncio
+async def test_transport_forwards_tools_choice_history_and_minimal():
+    """Tools, tool_choice and full history reach the request; forced is none."""
+    tc1 = MagicMock()
+    tc1.id = "call_round1"
+    tc1.function.name = "web_search"
+    tc1.function.arguments = json.dumps({"query": "Mysuru places"})
+    choice1 = MagicMock()
+    choice1.message.content = None
+    choice1.message.tool_calls = [tc1]
+    resp1 = MagicMock(choices=[choice1])
+    resp1.usage = None
+
+    tc2 = MagicMock()
+    tc2.id = "call_round2"
+    tc2.function.name = "web_search"
+    tc2.function.arguments = json.dumps({"query": "Mysuru palace timing"})
+    choice2 = MagicMock()
+    choice2.message.content = None
+    choice2.message.tool_calls = [tc2]
+    resp2 = MagicMock(choices=[choice2])
+    resp2.usage = None
+
+    choice3 = MagicMock()
+    choice3.message.content = "Visit the palace, Chamundi Hills and market."
+    choice3.message.tool_calls = None
+    resp3 = MagicMock(choices=[choice3])
+    resp3.usage = None
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create = AsyncMock(
+        side_effect=[resp1, resp2, resp3]
+    )
+
+    with patch(
+        "app.services.llm_service.get_llm_client", return_value=mock_client
+    ), patch(
+        "app.services.search_service.search",
+        new=AsyncMock(return_value="Palace timings 10am-5:30pm"),
+    ):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
+            resp = await client.post(
+                "/v1/agent",
+                json={"content": "@agent\nName 3 places to visit in Mysuru"},
+            )
+            assert resp.status_code == 200
+
+    assert mock_client.chat.completions.create.call_count == 3
+    calls = mock_client.chat.completions.create.call_args_list
+
+    first_kwargs = calls[0][1]
+    assert "tools" in first_kwargs
+    assert first_kwargs["tool_choice"] == "auto"
+    assert first_kwargs["reasoning_effort"] == "minimal"
+    assert len(first_kwargs["messages"]) == 2
+
+    second_kwargs = calls[1][1]
+    assert "tools" in second_kwargs
+    assert second_kwargs["tool_choice"] == "auto"
+    assert second_kwargs["reasoning_effort"] == "minimal"
+    # system + user + assistant(tool_call) + tool(result)
+    assert len(second_kwargs["messages"]) == 4
+
+    forced_kwargs = calls[2][1]
+    assert forced_kwargs["tool_choice"] == "none"
+    assert forced_kwargs["reasoning_effort"] == "minimal"
+    # forced final carries the full two-round history
+    assert len(forced_kwargs["messages"]) == 6
 
 
 @pytest.mark.asyncio
 async def test_agent_with_search_mock():
     """Mock tool call triggering search, verifying search and multiple rounds."""
-    tc = MagicMock()
-    tc.id = "call_abc123"
-    tc.function.name = "web_search"
-    tc.function.arguments = json.dumps({"query": "FastAPI release date"})
-
-    choice_round1 = MagicMock()
-    choice_round1.message.content = None
-    choice_round1.message.tool_calls = [tc]
-    resp_round1 = MagicMock(choices=[choice_round1])
-
-    choice_round2 = MagicMock()
-    choice_round2.message.content = "FastAPI was first released in December 2018."
-    choice_round2.message.tool_calls = None
-    resp_round2 = MagicMock(choices=[choice_round2])
-
-    mock_client = MagicMock()
-    mock_client.chat.completions.create = AsyncMock(
-        side_effect=[resp_round1, resp_round2]
-    )
-
     with patch(
-        "app.services.agent_service.get_llm_client",
-        return_value=mock_client,
+        "app.services.llm_service.complete_messages",
+        new=AsyncMock(
+            side_effect=[
+                _llm_tool_call("call_abc123", "FastAPI release date"),
+                _llm_text("FastAPI was first released in December 2018."),
+            ]
+        ),
     ), patch(
         "app.services.search_service.search",
         new=AsyncMock(return_value="FastAPI Initial release December 5, 2018"),
@@ -273,31 +390,34 @@ async def test_empty_llm_fails_502():
 
 
 @pytest.mark.asyncio
+async def test_agent_empty_after_retry_502():
+    """Agent returning empty text twice raises 502."""
+    with patch(
+        "app.services.llm_service.complete_messages",
+        new=AsyncMock(return_value=_llm_text("")),
+    ):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
+            resp = await client.post(
+                "/v1/agent",
+                json={"content": "@agent\nWrite something inspiring"},
+            )
+            assert resp.status_code == 502
+
+
+@pytest.mark.asyncio
 async def test_search_timeout_fallback():
     """Mock search raising TimeoutError returns 200 with search_timeout note."""
-    tc = MagicMock()
-    tc.id = "call_timeout123"
-    tc.function.name = "web_search"
-    tc.function.arguments = json.dumps({"query": "latest news"})
-
-    choice_round1 = MagicMock()
-    choice_round1.message.content = None
-    choice_round1.message.tool_calls = [tc]
-    resp_round1 = MagicMock(choices=[choice_round1])
-
-    choice_forced = MagicMock()
-    choice_forced.message.content = "Search was unavailable, but here is what I know."
-    choice_forced.message.tool_calls = None
-    resp_forced = MagicMock(choices=[choice_forced])
-
-    mock_client = MagicMock()
-    mock_client.chat.completions.create = AsyncMock(
-        side_effect=[resp_round1, resp_forced]
-    )
-
     with patch(
-        "app.services.agent_service.get_llm_client",
-        return_value=mock_client,
+        "app.services.llm_service.complete_messages",
+        new=AsyncMock(
+            side_effect=[
+                _llm_tool_call("call_timeout123", "latest news"),
+                _llm_text("Search was unavailable, but here is what I know."),
+            ]
+        ),
     ), patch(
         "app.services.search_service.search",
         new=AsyncMock(side_effect=asyncio.TimeoutError()),
@@ -326,7 +446,9 @@ async def test_rate_limited_429():
     """Upstream RateLimitedError returns 429 status code."""
     with patch(
         "app.services.llm_service.complete",
-        new=AsyncMock(side_effect=RateLimitedError("Meta API rate limit exceeded")),
+        new=AsyncMock(
+            side_effect=RateLimitedError("Meta API rate limit exceeded")
+        ),
     ):
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(

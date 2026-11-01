@@ -6,12 +6,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
-import openai
-
 from app.core.config import settings
-from app.core.exceptions import MetaApiError, RateLimitedError
+from app.core.exceptions import InvalidRequestError, MetaApiError, RateLimitedError
 from app.services import llm_service, search_service
-from app.services.llm_client import get_llm_client
 
 _PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
 
@@ -32,6 +29,8 @@ WEB_SEARCH_TOOL: dict[str, Any] = {
         },
     },
 }
+
+OUT_OF_SCOPE_MARKER = "[[OUT_OF_SCOPE]]"
 
 
 @dataclass
@@ -99,7 +98,9 @@ async def cleanup_branch(
     system_prompt = _load_prompt("cleanup_system.md")
 
     async def _call_complete() -> llm_service.LLMResult:
-        return await llm_service.complete(system_prompt, content)
+        return await llm_service.complete(
+            system_prompt, content, reasoning_effort="minimal"
+        )
 
     try:
         result = await _call_complete()
@@ -128,34 +129,6 @@ async def cleanup_branch(
         note=None,
         elapsed_ms=result.elapsed_ms,
     )
-
-
-def _extract_text(response: Any) -> str:
-    """Safely extract generated text from LLM response object or dict."""
-    choices = getattr(response, "choices", None)
-    if choices and len(choices) > 0:
-        first_choice = choices[0]
-        message = getattr(first_choice, "message", None)
-        if message is not None:
-            return getattr(message, "content", "") or ""
-        if isinstance(first_choice, dict):
-            return first_choice.get("message", {}).get("content", "") or ""
-    return ""
-
-
-def _extract_tool_calls(response: Any) -> list[Any]:
-    """Extract tool calls from the first choice of an LLM response."""
-    choices = getattr(response, "choices", None)
-    if choices and len(choices) > 0:
-        first_choice = choices[0]
-        message = getattr(first_choice, "message", None)
-        if message is not None:
-            calls = getattr(message, "tool_calls", None)
-            return list(calls) if calls else []
-        if isinstance(first_choice, dict):
-            calls = first_choice.get("message", {}).get("tool_calls", None)
-            return list(calls) if calls else []
-    return []
 
 
 def _extract_query(tool_call: Any) -> str:
@@ -225,35 +198,16 @@ def _build_assistant_tool_message(tool_call: Any) -> dict[str, Any]:
 async def _call_llm_with_retry(
     messages: list[dict[str, Any]],
     tools: Optional[list[dict[str, Any]]] = None,
-) -> Any:
-    """Invoke chat completion with tools and single retry on MetaApiError."""
-    async def _invoke() -> Any:
-        client = get_llm_client()
-        model = settings.DEFAULT_LLM_MODEL or "muse-spark-1.3"
-        kwargs: dict[str, Any] = {
-            "model": model,
-            "messages": messages,
-        }
-        if tools:
-            kwargs["tools"] = tools
-            kwargs["tool_choice"] = "auto"
-
-        try:
-            return await client.chat.completions.create(**kwargs)
-        except RateLimitedError:
-            raise
-        except MetaApiError:
-            raise
-        except openai.RateLimitError:
-            raise RateLimitedError("Meta API rate limit exceeded") from None
-        except (openai.APITimeoutError, openai.APIConnectionError):
-            raise MetaApiError("Meta API connection error") from None
-        except openai.APIStatusError as exc:
-            raise MetaApiError(
-                "Meta API request failed", status_code=exc.status_code
-            ) from None
-        except openai.OpenAIError:
-            raise MetaApiError("Meta API request failed") from None
+    tool_choice: Optional[Any] = None,
+) -> llm_service.LLMResult:
+    """Invoke llm_service with tools and single retry on MetaApiError."""
+    async def _invoke() -> llm_service.LLMResult:
+        return await llm_service.complete_messages(
+            messages,
+            tools=tools,
+            tool_choice=tool_choice,
+            reasoning_effort="minimal",
+        )
 
     try:
         return await _invoke()
@@ -269,13 +223,10 @@ async def _agent_branch_impl(
 ) -> AgentResult:
     """Internal implementation of the agent branch generative loop."""
     task, body = parse_agent_block(content)
-    if not task:
-        return AgentResult(
-            text="Please describe your task.",
-            used_search=False,
-            rounds=0,
-            note=None,
-            elapsed_ms=0.0,
+    if not task.strip():
+        raise InvalidRequestError(
+            "Type what you want after @agent",
+            status_code=422,
         )
 
     system_prompt = _load_prompt("agent_system.md")
@@ -293,11 +244,18 @@ async def _agent_branch_impl(
     text = ""
 
     while rounds < 2:
-        tools = [WEB_SEARCH_TOOL] if settings.AGENT_SEARCH_ENABLED else None
-        response = await _call_llm_with_retry(messages, tools=tools)
+        if settings.AGENT_SEARCH_ENABLED:
+            tools = [WEB_SEARCH_TOOL]
+            tool_choice: Optional[Any] = "auto"
+        else:
+            tools = None
+            tool_choice = None
+        result = await _call_llm_with_retry(
+            messages, tools=tools, tool_choice=tool_choice
+        )
         rounds += 1
 
-        tool_calls = _extract_tool_calls(response)
+        tool_calls = result.tool_calls or []
         if tool_calls and settings.AGENT_SEARCH_ENABLED:
             used_search = True
             tool_call = tool_calls[0]
@@ -325,16 +283,29 @@ async def _agent_branch_impl(
             messages.append(assistant_msg)
             messages.append(tool_msg)
         else:
-            text = _extract_text(response)
+            text = result.text
             break
 
     if not text.strip():
-        forced_resp = await _call_llm_with_retry(messages, tools=None)
-        text = _extract_text(forced_resp)
+        if settings.AGENT_SEARCH_ENABLED:
+            forced_resp = await _call_llm_with_retry(
+                messages, tools=None, tool_choice="none"
+            )
+        else:
+            forced_resp = await _call_llm_with_retry(messages)
+        text = forced_resp.text
         if not text.strip():
             raise MetaApiError("Empty response from LLM")
 
     elapsed_ms = round((time.perf_counter() - start_time) * 1000.0, 2)
+    if OUT_OF_SCOPE_MARKER in text:
+        return AgentResult(
+            text=content,
+            used_search=used_search,
+            rounds=rounds,
+            note="out_of_scope",
+            elapsed_ms=elapsed_ms,
+        )
     return AgentResult(
         text=text,
         used_search=used_search,

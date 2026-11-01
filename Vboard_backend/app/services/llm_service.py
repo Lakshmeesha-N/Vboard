@@ -1,5 +1,5 @@
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Optional
 
 import openai
@@ -20,6 +20,7 @@ class LLMResult:
     completion_tokens: int
     cached_tokens: int
     reasoning_tokens: int
+    tool_calls: list[Any] = field(default_factory=list)
 
 
 def _extract_usage_field(obj: Any, field_name: str) -> int:
@@ -145,4 +146,123 @@ async def complete(
         completion_tokens=completion_tokens,
         cached_tokens=cached_tokens,
         reasoning_tokens=reasoning_tokens,
+    )
+
+
+async def complete_messages(
+    messages: list[dict[str, Any]],
+    tools: Optional[list[dict[str, Any]]] = None,
+    tool_choice: Optional[Any] = None,
+    response_format: Optional[dict[str, Any]] = None,
+    reasoning_effort: Optional[str] = None,
+) -> LLMResult:
+    """
+    Execute a chat completion call with full message history and tool support.
+
+    Args:
+        messages: Full conversation history (system/user/assistant/tool).
+        tools: Optional list of tool definitions (e.g. web_search).
+        tool_choice: Optional tool choice constraint ("auto", "none", ...).
+        response_format: Optional structured output format constraint.
+        reasoning_effort: Optional reasoning effort level.
+
+    Returns:
+        LLMResult with response text, tool calls, and token metrics.
+    """
+    client = get_llm_client()
+    model = settings.DEFAULT_LLM_MODEL or "muse-spark-1.3"
+
+    start_time = time.perf_counter()
+
+    call_kwargs: dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+    }
+    if tools is not None:
+        call_kwargs["tools"] = tools
+    if tool_choice is not None:
+        call_kwargs["tool_choice"] = tool_choice
+    if response_format is not None:
+        call_kwargs["response_format"] = response_format
+    if reasoning_effort is not None:
+        call_kwargs["reasoning_effort"] = reasoning_effort
+
+    try:
+        response = await client.chat.completions.create(**call_kwargs)
+    except openai.RateLimitError:
+        raise RateLimitedError("Meta API rate limit exceeded") from None
+    except (openai.APITimeoutError, openai.APIConnectionError):
+        raise MetaApiError("Meta API connection error") from None
+    except openai.APIStatusError as exc:
+        raise MetaApiError(
+            "Meta API request failed", status_code=exc.status_code
+        ) from None
+    except openai.OpenAIError:
+        raise MetaApiError("Meta API request failed") from None
+
+    elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+
+    text = ""
+    tool_calls: list[Any] = []
+    choices = getattr(response, "choices", None)
+    if choices and len(choices) > 0:
+        first_choice = choices[0]
+        message = getattr(first_choice, "message", None)
+        if message is not None:
+            text = getattr(message, "content", "") or ""
+            calls = getattr(message, "tool_calls", None)
+            tool_calls = list(calls) if calls else []
+        elif isinstance(first_choice, dict):
+            msg = first_choice.get("message", {})
+            text = msg.get("content", "") or ""
+            calls = msg.get("tool_calls", None)
+            tool_calls = list(calls) if calls else []
+
+    prompt_tokens = 0
+    completion_tokens = 0
+    cached_tokens = 0
+    reasoning_tokens = 0
+
+    usage = getattr(response, "usage", None)
+    if usage is not None:
+        prompt_tokens = _extract_usage_field(usage, "prompt_tokens")
+        completion_tokens = _extract_usage_field(usage, "completion_tokens")
+
+        prompt_details = (
+            usage.get("prompt_tokens_details")
+            if isinstance(usage, dict)
+            else getattr(usage, "prompt_tokens_details", None)
+        )
+        cached_tokens = _extract_usage_field(prompt_details, "cached_tokens")
+
+        completion_details = (
+            usage.get("completion_tokens_details")
+            if isinstance(usage, dict)
+            else getattr(usage, "completion_tokens_details", None)
+        )
+        reasoning_tokens = _extract_usage_field(completion_details, "reasoning_tokens")
+
+    elapsed_ms_rounded = round(elapsed_ms, 2)
+
+    # Privacy requirement: Log numbers only, never user text/prompts
+    logger.info(
+        "LLM complete: elapsed_ms={:.2f}, prompt_tokens={}, "
+        "completion_tokens={}, cached_tokens={}, reasoning_tokens={}, "
+        "tool_calls={}",
+        elapsed_ms_rounded,
+        prompt_tokens,
+        completion_tokens,
+        cached_tokens,
+        reasoning_tokens,
+        len(tool_calls),
+    )
+
+    return LLMResult(
+        text=text,
+        elapsed_ms=elapsed_ms_rounded,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        cached_tokens=cached_tokens,
+        reasoning_tokens=reasoning_tokens,
+        tool_calls=tool_calls,
     )
