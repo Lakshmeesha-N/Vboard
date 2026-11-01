@@ -1,5 +1,6 @@
 import asyncio
 import json
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -267,9 +268,22 @@ async def test_transport_forwards_tools_choice_history_and_minimal():
     resp3.usage = None
 
     mock_client = MagicMock()
-    mock_client.chat.completions.create = AsyncMock(
-        side_effect=[resp1, resp2, resp3]
-    )
+    scripted = [resp1, resp2, resp3]
+    seen: list[dict[str, Any]] = []
+
+    async def _fake_create(**kwargs: Any) -> Any:
+        # Snapshot now: agent_service mutates the messages list afterwards.
+        seen.append(
+            {
+                "has_tools": "tools" in kwargs,
+                "tool_choice": kwargs.get("tool_choice"),
+                "reasoning_effort": kwargs.get("reasoning_effort"),
+                "message_count": len(kwargs["messages"]),
+            }
+        )
+        return scripted[len(seen) - 1]
+
+    mock_client.chat.completions.create = _fake_create
 
     with patch(
         "app.services.llm_service.get_llm_client", return_value=mock_client
@@ -287,27 +301,26 @@ async def test_transport_forwards_tools_choice_history_and_minimal():
             )
             assert resp.status_code == 200
 
-    assert mock_client.chat.completions.create.call_count == 3
-    calls = mock_client.chat.completions.create.call_args_list
+    assert len(seen) == 3
 
-    first_kwargs = calls[0][1]
-    assert "tools" in first_kwargs
-    assert first_kwargs["tool_choice"] == "auto"
-    assert first_kwargs["reasoning_effort"] == "minimal"
-    assert len(first_kwargs["messages"]) == 2
+    first = seen[0]
+    assert first["has_tools"] is True
+    assert first["tool_choice"] == "auto"
+    assert first["reasoning_effort"] == "minimal"
+    assert first["message_count"] == 2
 
-    second_kwargs = calls[1][1]
-    assert "tools" in second_kwargs
-    assert second_kwargs["tool_choice"] == "auto"
-    assert second_kwargs["reasoning_effort"] == "minimal"
+    second = seen[1]
+    assert second["has_tools"] is True
+    assert second["tool_choice"] == "auto"
+    assert second["reasoning_effort"] == "minimal"
     # system + user + assistant(tool_call) + tool(result)
-    assert len(second_kwargs["messages"]) == 4
+    assert second["message_count"] == 4
 
-    forced_kwargs = calls[2][1]
-    assert forced_kwargs["tool_choice"] == "none"
-    assert forced_kwargs["reasoning_effort"] == "minimal"
+    forced = seen[2]
+    assert forced["tool_choice"] == "none"
+    assert forced["reasoning_effort"] == "minimal"
     # forced final carries the full two-round history
-    assert len(forced_kwargs["messages"]) == 6
+    assert forced["message_count"] == 6
 
 
 @pytest.mark.asyncio
