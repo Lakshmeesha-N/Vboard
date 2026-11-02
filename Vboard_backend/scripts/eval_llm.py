@@ -421,6 +421,8 @@ async def run_evaluation(
                     f"got={score['got_action']:<7} | {status_str:<4} | "
                     f"{score['elapsed_ms']:5.0f}ms | {tok_str:>9}{fb_str}{cer_str}"
                 )
+                print(f"    [GOT] {score['got_text']}")
+                print(f"    [EXP] {r['expected_text'].strip()}")
 
                 if show_failed and not score["pass"]:
                     print(

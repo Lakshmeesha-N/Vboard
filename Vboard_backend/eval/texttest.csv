@@ -1,17 +1,43 @@
 id,mix,box_text,spoken_text,expected_action,expected_find,expected_which,expected_text,notes
-1,English,"","i will be late by ten minutes",insert,,last,"I will be late by ten minutes.",plain dictation
-2,Kannada,"","ನಾಳೆ ನಾನು ಆಫೀಸ್ಗೆ ಬರುವುದಿಲ್ಲ",insert,,last,"I will not come to the office tomorrow.",Kannada to English
-3,Kanglish,"Hi Team,","naale nanu office ge baralla health sariyilla",insert,,last,"Tomorrow I will not come to the office, I am not well.",Kanglish dictation
-4,English,"Hi Team,","i need leev tomorow becuse of feever",insert,,last,"I need leave tomorrow because of fever.",typo cleanup
-5,English,"Hello Ravi, the meeting is at 5 PM.","change Ravi to Raj",replace,Ravi,last,Raj,simple replace
-6,Kanglish,"Hello Ravi, the meeting is at 5 PM.","Ravi na Raj ge change maadu",replace,Ravi,last,Raj,Kanglish command
-7,English,"Ravi met Ravi's brother at the office.","change the first Ravi to Raj",replace,Ravi,first,Raj,which is first
-8,English,"Ravi called. Ravi will join. Tell Ravi to bring the file.","change all Ravi to Raj",replace,Ravi,all,Raj,which is all
-9,English,"Hello Ravi, the meeting is at 5 PM.","change Suresh to Raj",none,,,,word not in box so expect none
-10,English,"Hi Team, I am writing this email to let you know that I am not feeling very well today and because of that I will not be able to come to the office tomorrow.","make it shorter",rewrite,,last,"Hi Team, I am unwell and will not be in the office tomorrow.",shorter
-11,English,"need leave tomorrow fever","make it professional",rewrite,,last,"I have a fever and would like to request leave for tomorrow.",professional
-12,Kannada,"ನಾಳೆ ನಾನು ಆಫೀಸ್ಗೆ ಬರುವುದಿಲ್ಲ","English ge change maado",rewrite,,last,"I will not come to the office tomorrow.",translate
-13,Kannada,"Please send me the report as soon as possible because I need it urgently for the meeting.","ಇದನ್ನು ಚಿಕ್ಕದಾಗಿ ಮಾಡಿ",rewrite,,last,"Please send me the report urgently for the meeting.",Kannada command shorter
-14,English,"hello ravi how r u i will come tomorow","clean this up",rewrite,,last,"Hello Ravi, how are you? I will come tomorrow.",clean up
-15,English,"Thanks for your help.","I told him to change Ravi to Raj",insert,,last,"I told him to change Ravi to Raj.",looks like a command but is new text
-16,English,"Hi Team,","please make it shorter next time",insert,,last,"Please make it shorter next time.",looks like a command but is new text
+1,English,"","hello ravi how are you i will come tomorrow",insert,,last,"Hello Ravi, how are you? I will come tomorrow.","punctuation and capitals from raw lowercase speech"
+2,English,"","i need leev tomorow becuse of feever",insert,,last,"I need leave tomorrow because of fever.","spelling fixes, no words added"
+3,English,"","uhm i will um come tomorrow you know",insert,,last,"I will come tomorrow.","filler words removed"
+4,English,"","i will be late by ten minutes",insert,,last,"I will be late by ten minutes.","plain dictation"
+5,Kannada,"","ನಾಳೆ ನಾನು ಆಫೀಸ್ಗೆ ಬರುವುದಿಲ್ಲ",insert,,last,"ನಾಳೆ ನಾನು ಆಫೀಸ್ಗೆ ಬರುವುದಿಲ್ಲ.","Kannada stays Kannada, only punctuation added"
+6,Hindi,"","कल मैं ऑफिस नहीं आऊंगा",insert,,last,"कल मैं ऑफिस नहीं आऊंगा।","Hindi stays Hindi, danda added"
+7,Romanized-Kannada,"","naale naanu office ge baralla",insert,,last,"ನಾಳೆ ನಾನು office ಗೆ ಬರಲ್ಲ.","romanized Kannada in native script, office kept in English"
+8,Kanglish,"Hi Team,","naale nanu office ge baralla health sariyilla",insert,,last,"ನಾಳೆ ನಾನು office ಗೆ ಬರಲ್ಲ, health ಸರಿಯಿಲ್ಲ.","mixed speech stays mixed, no unasked translation"
+9,Hindi,"","arey kal main office nahi aaunga yaar",insert,,last,"कल मैं office नहीं आऊंगा।","Hindi filler removed, office kept in English"
+10,English,"Thanks for your help.","i told him to change ravi to raj",insert,,last,"I told him to change Ravi to Raj.","trap: reported speech is new text, not a box command"
+11,English,"Hi Team,","please make it shorter next time",insert,,last,"Please make it shorter next time.","trap: sounds like a command, is new dictation"
+12,English,"","change ravi to raj said the manager",insert,,last,"Change Ravi to Raj, said the manager.","trap: quoted command words are new text"
+13,English,"Hello Ravi, the meeting is at 5 PM.","change ravi to raj",rewrite,,last,"Hello Raj, the meeting is at 5 PM.","box command via rewrite with full new box"
+14,Kanglish,"Hello Ravi, the meeting is at 5 PM.","ravi na raj ge change maadu",rewrite,,last,"Hello Raj, the meeting is at 5 PM.","Kanglish box command via rewrite"
+15,English,"Ravi met Ravi at the office.","change the first ravi to raj",rewrite,,last,"Raj met Ravi at the office.","first occurrence via rewrite full text"
+16,English,"Ravi called. Ravi will join.","change all ravi to raj",rewrite,,last,"Raj called. Raj will join.","all occurrences via rewrite full text"
+17,English,"Hi Team, I am writing this email to let you know that I am not feeling very well today and because of that I will not be able to come to the office tomorrow.","make it shorter",rewrite,,last,"Hi Team, I am unwell and will not be in the office tomorrow.","shorten command"
+18,English,"hello ravi how r u i will come tomorow","clean this up",rewrite,,last,"Hello Ravi, how are you? I will come tomorrow.","cleanup command on messy box"
+19,Kannada,"ನಾಳೆ ನಾನು ಆಫೀಸ್ಗೆ ಬರುವುದಿಲ್ಲ","translate to english",rewrite,,last,"I will not come to the office tomorrow.","explicit translate to English"
+20,Kannada,"ನಾಳೆ ನಾನು ಆಫೀಸ್ಗೆ ಬರುವುದಿಲ್ಲ","english ge change maado",rewrite,,last,"I will not come to the office tomorrow.","Kannada command asking for English"
+21,Kannada,"Please send me the report as soon as possible because I need it urgently for the meeting.","ಇದನ್ನು ಚಿಕ್ಕದಾಗಿ ಮಾಡಿ",rewrite,,last,"Please send me the report urgently for the meeting.","Kannada shorten command on English box"
+22,English,"","sir i am not feeling well kindly grant me leave for tomorrow",insert,,last,"Sir, I am not feeling well. Kindly grant me leave for tomorrow.","formal cue sir keeps polite wording, no emoji or greeting added"
+23,English,"","respected manager i request leave for two days for my sister marriage",insert,,last,"Respected Manager, I request leave for two days for my sister's marriage.","formal cue manager keeps polite wording, no emoji or greeting added"
+24,Kanglish,"","machi naale cricket ide neenu barthiya",insert,,last,"Machi, ನಾಳೆ cricket ಇದೆ, ನೀನು ಬರ್ತಿಯಾ?","casual cue machi stays casual, not formalized"
+25,English,"","hey friend send me that file da will check and revert",insert,,last,"Hey friend, send me that file da, will check and revert.","casual cue friend stays casual, no emoji added"
+26,English,"","the delivery will arrive on friday please keep the gate open",insert,,last,"The delivery will arrive on Friday. Please keep the gate open.","no cue keeps neutral tone, nothing added"
+27,English,"","thanks for your help see you tomorrow",insert,,last,"Thanks for your help. See you tomorrow.","no greeting or emoji added beyond spoken words"
+28,English,"Hi Team,","i will share the report by evening",insert,,last,"I will share the report by evening.","new speech with non-empty box is still insert, not a command"
+29,Kannada,"ದಯವಿಟ್ಟು ನಾಳೆ ರಿಪೋರ್ಟ್ ಕಳುಹಿಸಿ","translate to english",rewrite,,last,"Please send the report tomorrow.","Kannada box translated to English"
+30,Hindi,"कल मैं ऑफिस नहीं आऊंगा","translate to english",rewrite,,last,"I will not come to the office tomorrow.","Hindi box translated to English"
+31,English,"I will not come to the office tomorrow.","translate to kannada",rewrite,,last,"ನಾಳೆ ನಾನು ಆಫೀಸ್ಗೆ ಬರುವುದಿಲ್ಲ.","English box translated to Kannada"
+32,English,"I will not come to the office tomorrow.","translate to hindi",rewrite,,last,"कल मैं ऑफिस नहीं आऊंगा।","English box translated to Hindi"
+33,Kanglish,"Hi Team, naale leave beku","translate to english",rewrite,,last,"Hi Team, I need leave tomorrow.","Kanglish box translated to English"
+34,Kannada,"Good morning, the meeting is at ten.","ಇದನ್ನು ಕನ್ನಡಕ್ಕೆ ಅನುವಾದ ಮಾಡಿ",rewrite,,last,"ಶುಭೋದಯ, ಮೀಟಿಂಗ್ ಹತ್ತಕ್ಕೆ ಇದೆ.","Kannada translate command on English box"
+35,Hindi,"Good morning, the meeting is at ten.","इसको हिंदी में बदलो",rewrite,,last,"सुप्रभात, मीटिंग दस बजे है।","Hindi translate command on English box"
+36,Hindi,"कल मैं ऑफिस नहीं आऊंगा","make it kannada",rewrite,,last,"ನಾಳೆ ನಾನು ಆಫೀಸ್ಗೆ ಬರುವುದಿಲ್ಲ.","English command turning Hindi box to Kannada"
+37,Kannada,"ನಾಳೆ ನಾನು ಆಫೀಸ್ಗೆ ಬರುವುದಿಲ್ಲ","isko english mein karo",rewrite,,last,"I will not come to the office tomorrow.","Hindi command turning Kannada box to English"
+38,English,"Respected Sir, kindly grant me leave for tomorrow.","translate to kannada",rewrite,,last,"ಗೌರವಾನ್ವಿತ ಸರ್, ದಯವಿಟ್ಟು ನಾಳೆ ನನಗೆ ರಜೆ ನೀಡಿ.","formal tone preserved through translation"
+39,Kanglish,"machi naale cricket ide barthiya","translate to english",rewrite,,last,"Machi, cricket tomorrow, you coming?","casual tone preserved, stays short"
+40,Kannada,"The meeting is at ten.","ನಾಳೆ ಮೀಟಿಂಗ್ ಇದೆ",insert,,last,"ನಾಳೆ ಮೀಟಿಂಗ್ ಇದೆ.","new Kannada speech inserted as-is, not translated to match box"
+41,Kannada,"ನಾಳೆ ನಾನು ಆಫೀಸ್ಗೆ ಬರುವುದಿಲ್ಲ","the report will be ready by evening",insert,,last,"The report will be ready by evening.","new English speech inserted as-is, not translated to match box"
+42,Kannada,"ನಾಳೆ ಮೀಟಿಂಗ್ ಇದೆ. ದಯವಿಟ್ಟು ರಿಪೋರ್ಟ್ ತನ್ನಿ.","translate the last line to english",rewrite,,last,"ನಾಳೆ ಮೀಟಿಂಗ್ ಇದೆ. Please bring the report.","only last line translated, first line kept exactly"
