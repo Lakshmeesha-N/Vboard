@@ -32,3 +32,6 @@ Vboard_backend/eval/audio/
 Vboard_backend/eval/results/
 Vboard/docs
 docs/agent-plan.md
+
+# Local-only helper docs (never track or push)
+docs/commands.md
