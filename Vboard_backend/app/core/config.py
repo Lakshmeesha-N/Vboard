@@ -86,10 +86,52 @@ class Settings(BaseSettings):
         description="Enable web search in agent branch",
     )
 
+    # Provider selection switches (default to "meta" for backward compatibility)
+    STT_PROVIDER: str = Field(
+        default="meta",
+        description="Active STT provider: meta, sarvam, openai",
+    )
+    LLM_PROVIDER: str = Field(
+        default="meta",
+        description="Active LLM provider: meta, openai, groq, google",
+    )
+
     # Provider API keys (optional fallback / multi-provider support)
     SARVAM_API_KEY: Optional[str] = None
     GEMINI_API_KEY: Optional[str] = None
     GROQ_API_KEY: Optional[str] = None
+    OPENAI_API_KEY: Optional[str] = None
+    OPENAI_BASE_URL: Optional[str] = None
+
+    # Per-provider model overrides
+    OPENAI_VOICE_MODEL: str = Field(
+        default="whisper-1",
+        description="OpenAI STT model identifier",
+    )
+    OPENAI_LLM_MODEL: str = Field(
+        default="gpt-4o-mini",
+        description="OpenAI chat completion model identifier",
+    )
+    SARVAM_VOICE_MODEL: str = Field(
+        default="saaras:v2",
+        description="Sarvam ASR model identifier",
+    )
+    SARVAM_BASE_URL: str = Field(
+        default="https://api.sarvam.ai",
+        description="Base URL for the Sarvam AI API",
+    )
+    GEMINI_LLM_MODEL: str = Field(
+        default="gemini-2.5-flash",
+        description="Google Gemini chat completion model identifier",
+    )
+    GROQ_LLM_MODEL: str = Field(
+        default="llama-3.3-70b-versatile",
+        description="Groq chat completion model identifier",
+    )
+    GROQ_BASE_URL: str = Field(
+        default="https://api.groq.com/openai/v1",
+        description="Base URL for the Groq OpenAI-compatible API",
+    )
 
     model_config = SettingsConfigDict(
         # Look for .env in Vboard_backend directory first, then the workspace root

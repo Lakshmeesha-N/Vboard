@@ -27,7 +27,10 @@ async def test_complete_success_fills_dataclass_and_checks_order():
     )
     mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
 
-    with patch("app.services.llm_service.get_llm_client", return_value=mock_client):
+    with patch(
+        "app.providers.llm.openai_compatible.get_llm_client",
+        return_value=mock_client,
+    ):
         result = await complete(
             system_prompt="You are a helpful assistant.",
             user_text="Convert this speech into text.",
@@ -62,7 +65,10 @@ async def test_complete_passes_optional_parameters_when_set():
     )
     mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
 
-    with patch("app.services.llm_service.get_llm_client", return_value=mock_client):
+    with patch(
+        "app.providers.llm.openai_compatible.get_llm_client",
+        return_value=mock_client,
+    ):
         await complete(
             system_prompt="sys",
             user_text="usr",
@@ -85,7 +91,10 @@ async def test_complete_missing_usage_fields_default_to_zero():
     )
     mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
 
-    with patch("app.services.llm_service.get_llm_client", return_value=mock_client):
+    with patch(
+        "app.providers.llm.openai_compatible.get_llm_client",
+        return_value=mock_client,
+    ):
         result = await complete("system", "user")
 
     assert result.text == "Fallback response"
@@ -112,7 +121,10 @@ async def test_complete_partial_usage_details_default_to_zero():
     )
     mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
 
-    with patch("app.services.llm_service.get_llm_client", return_value=mock_client):
+    with patch(
+        "app.providers.llm.openai_compatible.get_llm_client",
+        return_value=mock_client,
+    ):
         result = await complete("system", "user")
 
     assert result.text == "Partial usage response"
@@ -136,7 +148,10 @@ async def test_complete_maps_rate_limit_error():
     )
     mock_client.chat.completions.create = AsyncMock(side_effect=rate_err)
 
-    with patch("app.services.llm_service.get_llm_client", return_value=mock_client):
+    with patch(
+        "app.providers.llm.openai_compatible.get_llm_client",
+        return_value=mock_client,
+    ):
         with pytest.raises(RateLimitedError) as exc_info:
             await complete("system", "user")
 
@@ -185,7 +200,10 @@ async def test_complete_maps_api_errors(error_instance, expected_exc):
     mock_client = AsyncMock()
     mock_client.chat.completions.create = AsyncMock(side_effect=error_instance)
 
-    with patch("app.services.llm_service.get_llm_client", return_value=mock_client):
+    with patch(
+        "app.providers.llm.openai_compatible.get_llm_client",
+        return_value=mock_client,
+    ):
         with pytest.raises(expected_exc) as exc_info:
             await complete("system", "user")
 

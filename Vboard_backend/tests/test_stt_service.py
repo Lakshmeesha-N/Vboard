@@ -18,7 +18,7 @@ async def test_transcribe_language_bias_omitted_when_none():
     )
     mock_client.post = AsyncMock(return_value=mock_resp)
 
-    with patch("app.services.stt_service.get_meta_client", return_value=mock_client):
+    with patch("app.providers.stt.meta.get_meta_client", return_value=mock_client):
         res = await transcribe(b"fake_wav_bytes", languages=None)
 
     assert isinstance(res, TranscriptionResult)
@@ -45,7 +45,7 @@ async def test_transcribe_language_bias_omitted_when_empty():
     )
     mock_client.post = AsyncMock(return_value=mock_resp)
 
-    with patch("app.services.stt_service.get_meta_client", return_value=mock_client):
+    with patch("app.providers.stt.meta.get_meta_client", return_value=mock_client):
         res = await transcribe(b"fake_wav_bytes", languages=[])
 
     call_kwargs = mock_client.post.call_args.kwargs
@@ -64,7 +64,7 @@ async def test_transcribe_language_bias_included_when_provided():
     )
     mock_client.post = AsyncMock(return_value=mock_resp)
 
-    with patch("app.services.stt_service.get_meta_client", return_value=mock_client):
+    with patch("app.providers.stt.meta.get_meta_client", return_value=mock_client):
         await transcribe(b"fake_wav_bytes", languages=["Kannada", "English"])
 
     call_kwargs = mock_client.post.call_args.kwargs
@@ -89,7 +89,7 @@ async def test_transcribe_error_status_mapping(status_code, expected_exc):
     mock_resp = httpx.Response(status_code, text=raw_leak_text)
     mock_client.post = AsyncMock(return_value=mock_resp)
 
-    with patch("app.services.stt_service.get_meta_client", return_value=mock_client):
+    with patch("app.providers.stt.meta.get_meta_client", return_value=mock_client):
         with pytest.raises(expected_exc) as exc_info:
             await transcribe(b"fake_wav_bytes")
 
@@ -109,7 +109,7 @@ async def test_transcribe_retry_on_500_succeeds():
     )
     mock_client.post = AsyncMock(side_effect=[err_resp, ok_resp])
 
-    with patch("app.services.stt_service.get_meta_client", return_value=mock_client):
+    with patch("app.providers.stt.meta.get_meta_client", return_value=mock_client):
         with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             res = await transcribe(b"fake_wav_bytes")
             mock_sleep.assert_awaited_once_with(0.3)
@@ -126,7 +126,7 @@ async def test_transcribe_retry_on_500_fails_maps_to_meta_api_error():
     err_resp2 = httpx.Response(500, text="Internal Server Error 2")
     mock_client.post = AsyncMock(side_effect=[err_resp1, err_resp2])
 
-    with patch("app.services.stt_service.get_meta_client", return_value=mock_client):
+    with patch("app.providers.stt.meta.get_meta_client", return_value=mock_client):
         with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             with pytest.raises(MetaApiError) as exc_info:
                 await transcribe(b"fake_wav_bytes")

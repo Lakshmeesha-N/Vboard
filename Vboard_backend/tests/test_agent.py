@@ -216,7 +216,7 @@ async def test_agent_search_disabled(monkeypatch):
     mock_client.chat.completions.create = AsyncMock(return_value=mock_resp)
 
     with patch(
-        "app.services.llm_service.get_llm_client", return_value=mock_client
+        "app.providers.llm.openai_compatible.get_llm_client", return_value=mock_client
     ):
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(
@@ -286,7 +286,7 @@ async def test_transport_forwards_tools_choice_history_and_minimal():
     mock_client.chat.completions.create = _fake_create
 
     with patch(
-        "app.services.llm_service.get_llm_client", return_value=mock_client
+        "app.providers.llm.openai_compatible.get_llm_client", return_value=mock_client
     ), patch(
         "app.services.search_service.search",
         new=AsyncMock(return_value="Palace timings 10am-5:30pm"),

@@ -1,13 +1,5 @@
-import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
-
-import openai
-from loguru import logger
-
-from app.core.config import settings
-from app.core.exceptions import MetaApiError, RateLimitedError
-from app.services.llm_client import get_llm_client
 
 
 @dataclass(frozen=True)
@@ -41,7 +33,10 @@ async def complete(
     reasoning_effort: Optional[str] = None,
 ) -> LLMResult:
     """
-    Execute a chat completion call using the shared Meta LLM client.
+    Execute a chat completion using the active LLM provider.
+
+    The provider is selected by settings.LLM_PROVIDER (default: "meta").
+    See app/providers/factory.py for available providers.
 
     Args:
         system_prompt: System directive instructions.
@@ -56,96 +51,14 @@ async def complete(
         RateLimitedError: When HTTP 429 rate limit is encountered.
         MetaApiError: On timeouts, connection errors, or other upstream API failures.
     """
-    client = get_llm_client()
-    model = settings.DEFAULT_LLM_MODEL or "muse-spark-1.3"
+    from app.providers.factory import get_llm_provider
 
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_text},
-    ]
-
-    start_time = time.perf_counter()
-
-    call_kwargs: dict[str, Any] = {
-        "model": model,
-        "messages": messages,
-    }
-    if response_format is not None:
-        call_kwargs["response_format"] = response_format
-    if reasoning_effort is not None:
-        call_kwargs["reasoning_effort"] = reasoning_effort
-
-    try:
-        response = await client.chat.completions.create(**call_kwargs)
-    except openai.RateLimitError:
-        raise RateLimitedError("Meta API rate limit exceeded") from None
-    except (openai.APITimeoutError, openai.APIConnectionError):
-        raise MetaApiError("Meta API connection error") from None
-    except openai.APIStatusError as exc:
-        raise MetaApiError(
-            "Meta API request failed", status_code=exc.status_code
-        ) from None
-    except openai.OpenAIError:
-        raise MetaApiError("Meta API request failed") from None
-
-    elapsed_ms = (time.perf_counter() - start_time) * 1000.0
-
-    # Extract text content safely
-    text = ""
-    choices = getattr(response, "choices", None)
-    if choices and len(choices) > 0:
-        first_choice = choices[0]
-        message = getattr(first_choice, "message", None)
-        if message is not None:
-            text = getattr(message, "content", "") or ""
-        elif isinstance(first_choice, dict):
-            text = first_choice.get("message", {}).get("content", "") or ""
-
-    # Extract usage metrics with safe 0 fallbacks
-    prompt_tokens = 0
-    completion_tokens = 0
-    cached_tokens = 0
-    reasoning_tokens = 0
-
-    usage = getattr(response, "usage", None)
-    if usage is not None:
-        prompt_tokens = _extract_usage_field(usage, "prompt_tokens")
-        completion_tokens = _extract_usage_field(usage, "completion_tokens")
-
-        prompt_details = (
-            usage.get("prompt_tokens_details")
-            if isinstance(usage, dict)
-            else getattr(usage, "prompt_tokens_details", None)
-        )
-        cached_tokens = _extract_usage_field(prompt_details, "cached_tokens")
-
-        completion_details = (
-            usage.get("completion_tokens_details")
-            if isinstance(usage, dict)
-            else getattr(usage, "completion_tokens_details", None)
-        )
-        reasoning_tokens = _extract_usage_field(completion_details, "reasoning_tokens")
-
-    elapsed_ms_rounded = round(elapsed_ms, 2)
-
-    # Privacy requirement: Log numbers only, never user text/prompts
-    logger.info(
-        "LLM complete: elapsed_ms={:.2f}, prompt_tokens={}, "
-        "completion_tokens={}, cached_tokens={}, reasoning_tokens={}",
-        elapsed_ms_rounded,
-        prompt_tokens,
-        completion_tokens,
-        cached_tokens,
-        reasoning_tokens,
-    )
-
-    return LLMResult(
-        text=text,
-        elapsed_ms=elapsed_ms_rounded,
-        prompt_tokens=prompt_tokens,
-        completion_tokens=completion_tokens,
-        cached_tokens=cached_tokens,
-        reasoning_tokens=reasoning_tokens,
+    provider = get_llm_provider()
+    return await provider.complete(
+        system_prompt,
+        user_text,
+        response_format=response_format,
+        reasoning_effort=reasoning_effort,
     )
 
 
@@ -159,6 +72,9 @@ async def complete_messages(
     """
     Execute a chat completion call with full message history and tool support.
 
+    The provider is selected by settings.LLM_PROVIDER (default: "meta").
+    See app/providers/factory.py for available providers.
+
     Args:
         messages: Full conversation history (system/user/assistant/tool).
         tools: Optional list of tool definitions (e.g. web_search).
@@ -169,100 +85,13 @@ async def complete_messages(
     Returns:
         LLMResult with response text, tool calls, and token metrics.
     """
-    client = get_llm_client()
-    model = settings.DEFAULT_LLM_MODEL or "muse-spark-1.3"
+    from app.providers.factory import get_llm_provider
 
-    start_time = time.perf_counter()
-
-    call_kwargs: dict[str, Any] = {
-        "model": model,
-        "messages": messages,
-    }
-    if tools is not None:
-        call_kwargs["tools"] = tools
-    if tool_choice is not None:
-        call_kwargs["tool_choice"] = tool_choice
-    if response_format is not None:
-        call_kwargs["response_format"] = response_format
-    if reasoning_effort is not None:
-        call_kwargs["reasoning_effort"] = reasoning_effort
-
-    try:
-        response = await client.chat.completions.create(**call_kwargs)
-    except openai.RateLimitError:
-        raise RateLimitedError("Meta API rate limit exceeded") from None
-    except (openai.APITimeoutError, openai.APIConnectionError):
-        raise MetaApiError("Meta API connection error") from None
-    except openai.APIStatusError as exc:
-        raise MetaApiError(
-            "Meta API request failed", status_code=exc.status_code
-        ) from None
-    except openai.OpenAIError:
-        raise MetaApiError("Meta API request failed") from None
-
-    elapsed_ms = (time.perf_counter() - start_time) * 1000.0
-
-    text = ""
-    tool_calls: list[Any] = []
-    choices = getattr(response, "choices", None)
-    if choices and len(choices) > 0:
-        first_choice = choices[0]
-        message = getattr(first_choice, "message", None)
-        if message is not None:
-            text = getattr(message, "content", "") or ""
-            calls = getattr(message, "tool_calls", None)
-            tool_calls = list(calls) if calls else []
-        elif isinstance(first_choice, dict):
-            msg = first_choice.get("message", {})
-            text = msg.get("content", "") or ""
-            calls = msg.get("tool_calls", None)
-            tool_calls = list(calls) if calls else []
-
-    prompt_tokens = 0
-    completion_tokens = 0
-    cached_tokens = 0
-    reasoning_tokens = 0
-
-    usage = getattr(response, "usage", None)
-    if usage is not None:
-        prompt_tokens = _extract_usage_field(usage, "prompt_tokens")
-        completion_tokens = _extract_usage_field(usage, "completion_tokens")
-
-        prompt_details = (
-            usage.get("prompt_tokens_details")
-            if isinstance(usage, dict)
-            else getattr(usage, "prompt_tokens_details", None)
-        )
-        cached_tokens = _extract_usage_field(prompt_details, "cached_tokens")
-
-        completion_details = (
-            usage.get("completion_tokens_details")
-            if isinstance(usage, dict)
-            else getattr(usage, "completion_tokens_details", None)
-        )
-        reasoning_tokens = _extract_usage_field(completion_details, "reasoning_tokens")
-
-    elapsed_ms_rounded = round(elapsed_ms, 2)
-
-    # Privacy requirement: Log numbers only, never user text/prompts
-    logger.info(
-        "LLM complete: elapsed_ms={:.2f}, prompt_tokens={}, "
-        "completion_tokens={}, cached_tokens={}, reasoning_tokens={}, "
-        "tool_calls={}",
-        elapsed_ms_rounded,
-        prompt_tokens,
-        completion_tokens,
-        cached_tokens,
-        reasoning_tokens,
-        len(tool_calls),
-    )
-
-    return LLMResult(
-        text=text,
-        elapsed_ms=elapsed_ms_rounded,
-        prompt_tokens=prompt_tokens,
-        completion_tokens=completion_tokens,
-        cached_tokens=cached_tokens,
-        reasoning_tokens=reasoning_tokens,
-        tool_calls=tool_calls,
+    provider = get_llm_provider()
+    return await provider.complete_messages(
+        messages,
+        tools=tools,
+        tool_choice=tool_choice,
+        response_format=response_format,
+        reasoning_effort=reasoning_effort,
     )
