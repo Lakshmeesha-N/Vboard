@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Optional
 
 
@@ -12,7 +12,6 @@ class LLMResult:
     completion_tokens: int
     cached_tokens: int
     reasoning_tokens: int
-    tool_calls: list[Any] = field(default_factory=list)
 
 
 def _extract_usage_field(obj: Any, field_name: str) -> int:
@@ -57,41 +56,6 @@ async def complete(
     return await provider.complete(
         system_prompt,
         user_text,
-        response_format=response_format,
-        reasoning_effort=reasoning_effort,
-    )
-
-
-async def complete_messages(
-    messages: list[dict[str, Any]],
-    tools: Optional[list[dict[str, Any]]] = None,
-    tool_choice: Optional[Any] = None,
-    response_format: Optional[dict[str, Any]] = None,
-    reasoning_effort: Optional[str] = None,
-) -> LLMResult:
-    """
-    Execute a chat completion call with full message history and tool support.
-
-    The provider is selected by settings.LLM_PROVIDER (default: "meta").
-    See app/providers/factory.py for available providers.
-
-    Args:
-        messages: Full conversation history (system/user/assistant/tool).
-        tools: Optional list of tool definitions (e.g. web_search).
-        tool_choice: Optional tool choice constraint ("auto", "none", ...).
-        response_format: Optional structured output format constraint.
-        reasoning_effort: Optional reasoning effort level.
-
-    Returns:
-        LLMResult with response text, tool calls, and token metrics.
-    """
-    from app.providers.factory import get_llm_provider
-
-    provider = get_llm_provider()
-    return await provider.complete_messages(
-        messages,
-        tools=tools,
-        tool_choice=tool_choice,
         response_format=response_format,
         reasoning_effort=reasoning_effort,
     )

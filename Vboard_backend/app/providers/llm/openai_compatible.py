@@ -89,12 +89,9 @@ class OpenAICompatibleLLMProvider:
             raise MetaApiError("Provider API request failed") from None
 
     @staticmethod
-    def _build_result(
-        response: Any, elapsed_ms: float, tool_calls_list: list[Any] | None = None
-    ) -> LLMResult:
-        """Extract text, tool calls, and token metrics from a completion response."""
+    def _build_result(response: Any, elapsed_ms: float) -> LLMResult:
+        """Extract text and token metrics from a completion response."""
         text = ""
-        tool_calls: list[Any] = tool_calls_list or []
 
         choices = getattr(response, "choices", None)
         if choices and len(choices) > 0:
@@ -102,15 +99,9 @@ class OpenAICompatibleLLMProvider:
             message = getattr(first_choice, "message", None)
             if message is not None:
                 text = getattr(message, "content", "") or ""
-                if tool_calls_list is None:
-                    calls = getattr(message, "tool_calls", None)
-                    tool_calls = list(calls) if calls else []
             elif isinstance(first_choice, dict):
                 msg = first_choice.get("message", {})
                 text = msg.get("content", "") or ""
-                if tool_calls_list is None:
-                    calls = msg.get("tool_calls", None)
-                    tool_calls = list(calls) if calls else []
 
         prompt_tokens = 0
         completion_tokens = 0
@@ -143,14 +134,12 @@ class OpenAICompatibleLLMProvider:
         # Privacy: log numbers only
         logger.info(
             "LLM complete: elapsed_ms={:.2f}, prompt_tokens={}, "
-            "completion_tokens={}, cached_tokens={}, reasoning_tokens={}, "
-            "tool_calls={}",
+            "completion_tokens={}, cached_tokens={}, reasoning_tokens={}",
             elapsed_rounded,
             prompt_tokens,
             completion_tokens,
             cached_tokens,
             reasoning_tokens,
-            len(tool_calls),
         )
 
         return LLMResult(
@@ -160,7 +149,6 @@ class OpenAICompatibleLLMProvider:
             completion_tokens=completion_tokens,
             cached_tokens=cached_tokens,
             reasoning_tokens=reasoning_tokens,
-            tool_calls=tool_calls,
         )
 
     # ------------------------------------------------------------------
@@ -183,34 +171,6 @@ class OpenAICompatibleLLMProvider:
             "model": self._model,
             "messages": messages,
         }
-        if response_format is not None:
-            call_kwargs["response_format"] = response_format
-        if reasoning_effort is not None:
-            call_kwargs["reasoning_effort"] = reasoning_effort
-
-        start_time = time.perf_counter()
-        response = await self._create(**call_kwargs)
-        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
-
-        return self._build_result(response, elapsed_ms, tool_calls_list=[])
-
-    async def complete_messages(
-        self,
-        messages: list[dict[str, Any]],
-        tools: Optional[list[dict[str, Any]]] = None,
-        tool_choice: Optional[Any] = None,
-        response_format: Optional[dict[str, Any]] = None,
-        reasoning_effort: Optional[str] = None,
-    ) -> LLMResult:
-        """Multi-turn chat completion with optional tool/function support."""
-        call_kwargs: dict[str, Any] = {
-            "model": self._model,
-            "messages": messages,
-        }
-        if tools is not None:
-            call_kwargs["tools"] = tools
-        if tool_choice is not None:
-            call_kwargs["tool_choice"] = tool_choice
         if response_format is not None:
             call_kwargs["response_format"] = response_format
         if reasoning_effort is not None:

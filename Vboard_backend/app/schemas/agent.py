@@ -11,8 +11,5 @@ class AgentRequest(BaseModel):
 
 class AgentResponse(BaseModel):
     text: str  # never empty
-    used_search: bool
-    rounds: int
-    note: Optional[str] = None
     timing_ms: float
 

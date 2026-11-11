@@ -80,12 +80,6 @@ class Settings(BaseSettings):
         description="Reasoning effort level for Spark Chat Completions",
     )
 
-    # Agent settings
-    AGENT_SEARCH_ENABLED: bool = Field(
-        default=True,
-        description="Enable web search in agent branch",
-    )
-
     # Provider selection switches (default to "meta" for backward compatibility)
     STT_PROVIDER: str = Field(
         default="meta",

@@ -269,18 +269,13 @@ async def test_openai_whisper_error_mapping(monkeypatch, exc_factory, expected_e
 
 
 @pytest.mark.asyncio
-async def test_openai_compatible_non_shared_client_and_tools():
+async def test_openai_compatible_non_shared_client():
     mock_client = AsyncMock()
-    tool_call = SimpleNamespace(
-        id="call_1",
-        type="function",
-        function=SimpleNamespace(name="web_search", arguments='{"query":"weather"}'),
-    )
     mock_client.chat.completions.create = AsyncMock(
         return_value=SimpleNamespace(
             choices=[
                 SimpleNamespace(
-                    message=SimpleNamespace(content="", tool_calls=[tool_call])
+                    message=SimpleNamespace(content="Sunny today.")
                 )
             ],
             usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5),
@@ -297,16 +292,15 @@ async def test_openai_compatible_non_shared_client_and_tools():
         "app.providers.llm.openai_compatible.openai.AsyncOpenAI",
         return_value=_mock_openai_cm(mock_client),
     ):
-        res = await provider.complete_messages(
-            messages=[{"role": "user", "content": "weather?"}],
-            tools=[{"type": "function", "function": {"name": "web_search"}}],
-            tool_choice="auto",
+        res = await provider.complete(
+            system_prompt="sys",
+            user_text="weather?",
         )
 
     assert isinstance(res, LLMResult)
+    assert res.text == "Sunny today."
     assert res.prompt_tokens == 10
     assert res.completion_tokens == 5
-    assert len(res.tool_calls) == 1
     sent_kwargs = mock_client.chat.completions.create.call_args.kwargs
     assert sent_kwargs["model"] == "gpt-4o-mini"
 
@@ -378,85 +372,6 @@ async def test_gemini_complete_strips_additional_properties_and_parses():
     assert "additionalProperties" not in json.dumps(
         sent_body["generationConfig"]["responseSchema"]
     )
-
-
-@pytest.mark.asyncio
-async def test_gemini_complete_messages_tool_roundtrip_mapping():
-    gemini_tool_resp = {
-        "candidates": [
-            {
-                "content": {
-                    "parts": [
-                        {
-                            "functionCall": {
-                                "name": "web_search",
-                                "args": {"query": "mysuru palace timings"},
-                            }
-                        }
-                    ]
-                }
-            }
-        ],
-        "usageMetadata": {"promptTokenCount": 20, "candidatesTokenCount": 8},
-    }
-    resp = httpx.Response(200, json=gemini_tool_resp)
-    cm, mock_client = _mock_httpx_async_client(resp)
-
-    messages = [
-        {"role": "system", "content": "agent sys"},
-        {"role": "user", "content": "palace timings?"},
-        {
-            "role": "assistant",
-            "content": None,
-            "tool_calls": [
-                {
-                    "id": "gemini_call_1",
-                    "type": "function",
-                    "function": {
-                        "name": "web_search",
-                        "arguments": '{"query": "mysuru palace timings"}',
-                    },
-                }
-            ],
-        },
-        {
-            "role": "tool",
-            "tool_call_id": "gemini_call_1",
-            "content": "10am to 5:30pm",
-        },
-    ]
-    tools = [
-        {
-            "type": "function",
-            "function": {
-                "name": "web_search",
-                "description": "Search the web",
-                "parameters": {
-                    "type": "object",
-                    "properties": {"query": {"type": "string"}},
-                },
-            },
-        }
-    ]
-
-    provider = GoogleGeminiLLMProvider(api_key="gem-key", model="gemini-2.5-flash")
-    with patch("app.providers.llm.gemini.httpx.AsyncClient", return_value=cm):
-        res = await provider.complete_messages(
-            messages=messages, tools=tools, tool_choice="auto"
-        )
-
-    assert len(res.tool_calls) == 1
-    assert res.tool_calls[0]["function"]["name"] == "web_search"
-    assert json.loads(res.tool_calls[0]["function"]["arguments"]) == {
-        "query": "mysuru palace timings"
-    }
-
-    sent_body = mock_client.post.call_args.kwargs["json"]
-    assert sent_body["toolConfig"] == {"functionCallingConfig": {"mode": "AUTO"}}
-    # Verify tool role message resolved gemini_call_1 -> web_search
-    tool_resp_part = sent_body["contents"][2]["parts"][0]["functionResponse"]
-    assert tool_resp_part["name"] == "web_search"
-    assert tool_resp_part["response"] == {"content": "10am to 5:30pm"}
 
 
 @pytest.mark.asyncio

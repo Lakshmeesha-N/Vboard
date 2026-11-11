@@ -59,11 +59,8 @@ class BaseLLMProvider(Protocol):
     """
     Contract for large-language-model providers.
 
-    Implementations must expose two entry points:
-      - complete(): simple system+user prompt → text
-      - complete_messages(): full message history with optional tools →
-        text + tool_calls
-    Both must return an LLMResult-compatible dataclass.
+    Implementations must expose complete(): simple system+user prompt -> text,
+    returning an LLMResult-compatible dataclass.
     """
 
     async def complete(
@@ -84,34 +81,7 @@ class BaseLLMProvider(Protocol):
 
         Returns:
             LLMResult(text, elapsed_ms, prompt_tokens, completion_tokens,
-                      cached_tokens, reasoning_tokens, tool_calls=[]).
-
-        Raises:
-            RateLimitedError: On HTTP 429.
-            MetaApiError: On timeout, connection error, or other 5xx.
-        """
-        ...
-
-    async def complete_messages(
-        self,
-        messages: list[dict[str, Any]],
-        tools: Optional[list[dict[str, Any]]] = None,
-        tool_choice: Optional[Any] = None,
-        response_format: Optional[dict[str, Any]] = None,
-        reasoning_effort: Optional[str] = None,
-    ) -> Any:
-        """
-        Multi-turn chat completion with optional function/tool support.
-
-        Args:
-            messages: Full message history (system/user/assistant/tool roles).
-            tools: Optional list of tool definitions.
-            tool_choice: Optional tool choice constraint.
-            response_format: Optional structured JSON schema constraint.
-            reasoning_effort: Optional effort hint.
-
-        Returns:
-            LLMResult with text, tool_calls, and token metrics.
+                      cached_tokens, reasoning_tokens).
 
         Raises:
             RateLimitedError: On HTTP 429.

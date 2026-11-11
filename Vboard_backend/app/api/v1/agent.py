@@ -12,7 +12,7 @@ agent_router = router
 
 @router.post("/agent", response_model=AgentResponse)
 async def handle_agent(payload: AgentRequest) -> AgentResponse:
-    """Handle agent and cleanup requests."""
+    """Handle text cleanup and translation requests."""
     try:
         validate_device_id(payload.device_id)
     except InvalidRequestError as exc:
@@ -36,20 +36,9 @@ async def handle_agent(payload: AgentRequest) -> AgentResponse:
     parsed_languages = parse_languages(payload.languages)
     languages_str = ",".join(parsed_languages) if parsed_languages else None
 
-    if agent_service.route(payload.content) == "agent":
-        task, _ = agent_service.parse_agent_block(payload.content)
-        if not task.strip():
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="Type what you want after @agent",
-            )
-        res = await agent_service.agent_branch(
-            payload.content, languages=languages_str
-        )
-    else:
-        res = await agent_service.cleanup_branch(
-            payload.content, languages=languages_str
-        )
+    res = await agent_service.cleanup_branch(
+        payload.content, languages=languages_str
+    )
 
     if not res.text or not res.text.strip():
         raise HTTPException(
@@ -59,17 +48,11 @@ async def handle_agent(payload: AgentRequest) -> AgentResponse:
 
     # Privacy requirement: log numerical metrics only, never user content or output
     logger.info(
-        "Agent endpoint completed: rounds={}, timing_ms={:.2f}, "
-        "used_search={}, status_code=200",
-        res.rounds,
+        "Agent endpoint completed: timing_ms={:.2f}, status_code=200",
         res.elapsed_ms,
-        res.used_search,
     )
 
     return AgentResponse(
         text=res.text,
-        used_search=res.used_search,
-        rounds=res.rounds,
-        note=res.note,
         timing_ms=res.elapsed_ms,
     )
