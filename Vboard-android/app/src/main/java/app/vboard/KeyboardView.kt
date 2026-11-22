@@ -1,6 +1,8 @@
 package app.vboard
 
 import android.content.Context
+import android.graphics.Paint
+import android.os.SystemClock
 import android.util.TypedValue
 import android.view.Gravity
 import android.widget.LinearLayout
@@ -28,7 +30,8 @@ class KeyboardView(context: Context) : LinearLayout(context) {
 
     private var topBar: TopBarView? = null
 
-    private var capsOn = false
+    private var shiftState = KeyLayouts.ShiftState.OFF
+    private var lastShiftTapMs = 0L
     private var symbolsOn = false
     private var symbolsTogglePending = false
     private val symbolsToggleRunnable = Runnable {
@@ -59,20 +62,21 @@ class KeyboardView(context: Context) : LinearLayout(context) {
     }
 
     fun resetShift() {
-        capsOn = false
-        refreshShiftKey()
+        shiftState = KeyLayouts.ShiftState.OFF
+        lastShiftTapMs = 0L
+        refreshShift()
     }
 
     fun toggleSymbols() {
         symbolsOn = !symbolsOn
-        if (symbolsOn) capsOn = false
+        if (symbolsOn) shiftState = KeyLayouts.ShiftState.OFF
         rebuildKeys()
     }
 
     fun showLetters() {
         if (!symbolsOn) return
         symbolsOn = false
-        capsOn = false
+        shiftState = KeyLayouts.ShiftState.OFF
         rebuildKeys()
     }
 
@@ -115,6 +119,18 @@ class KeyboardView(context: Context) : LinearLayout(context) {
         topBar?.setUndoVisible(visible)
     }
 
+    fun showSuggestions(words: List<String>) {
+        topBar?.showSuggestions(words)
+    }
+
+    fun clearSuggestions() {
+        topBar?.clearSuggestions()
+    }
+
+    fun setOnSuggestionPick(onPick: ((String) -> Unit)?) {
+        topBar?.setOnSuggestionPick(onPick)
+    }
+
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         ViewCompat.requestApplyInsets(this)
@@ -146,7 +162,7 @@ class KeyboardView(context: Context) : LinearLayout(context) {
         val shiftRow = addRow(bottomRow)
         shiftKey = shiftRow.first()
         backspaceKey = shiftRow.last()
-        refreshShiftKey()
+        refreshShift()
 
         addRow(
             listOf(
@@ -167,14 +183,22 @@ class KeyboardView(context: Context) : LinearLayout(context) {
     }
 
     private fun onLetter(base: String) {
-        listener?.onText(KeyLayouts.applyCaps(base, capsOn))
+        listener?.onText(KeyLayouts.applyCaps(base, KeyLayouts.shiftShowsUppercase(shiftState)))
+        // One-shot shift is consumed by the next letter only; space and
+        // punctuation leave it armed.
+        if (shiftState == KeyLayouts.ShiftState.SINGLE && base.length == 1 && base[0].isLetter()) {
+            shiftState = KeyLayouts.ShiftState.OFF
+            refreshShift()
+        }
     }
 
     private fun onShiftTap() {
         if (symbolsOn) return
-        capsOn = !capsOn
-        refreshShiftKey()
-        listener?.onShiftChanged(capsOn)
+        val now = SystemClock.uptimeMillis()
+        val withinWindow = now - lastShiftTapMs <= KeyLayouts.DOUBLE_TAP_TIMEOUT_MS
+        lastShiftTapMs = now
+        shiftState = KeyLayouts.nextShiftState(shiftState, withinWindow)
+        refreshShift()
     }
 
     /**
@@ -195,12 +219,38 @@ class KeyboardView(context: Context) : LinearLayout(context) {
         super.onDetachedFromWindow()
     }
 
-    private fun refreshShiftKey() {
+    /** Auto-caps (sentence start): arms one-shot shift when currently off. */
+    fun setShiftSingle() {
+        if (symbolsOn || shiftState != KeyLayouts.ShiftState.OFF) return
+        lastShiftTapMs = 0L
+        shiftState = KeyLayouts.ShiftState.SINGLE
+        refreshShift()
+    }
+
+    /** Backspace cancels a pending one-shot shift; caps lock survives. */
+    fun clearOneShotShift() {
+        if (shiftState != KeyLayouts.ShiftState.SINGLE) return
+        shiftState = KeyLayouts.ShiftState.OFF
+        refreshShift()
+    }
+
+    private fun refreshShift() {
         val key = shiftKey ?: return
-        key.text = if (capsOn) KeyLayouts.CAPS_LABEL else KeyLayouts.SHIFT_LABEL
-        key.isSelected = capsOn
-        key.setCapsOn(capsOn)
-        letterKeys.forEach { it.text = KeyLayouts.applyCaps(it.tag as String, capsOn) }
+        val upper = KeyLayouts.shiftShowsUppercase(shiftState)
+        // Monochrome states, same glyph, no new colors: off is the plain
+        // outline arrow; armed/locked is bold (filled look); caps lock adds
+        // a small underline bar. Letter case updates on the same frame.
+        key.paint.isFakeBoldText = upper
+        key.paintFlags = if (shiftState == KeyLayouts.ShiftState.CAPS) {
+            key.paintFlags or Paint.UNDERLINE_TEXT_FLAG
+        } else {
+            key.paintFlags and Paint.UNDERLINE_TEXT_FLAG.inv()
+        }
+        key.text = KeyLayouts.SHIFT_LABEL
+        key.setCapsOn(upper)
+        key.isSelected = shiftState == KeyLayouts.ShiftState.CAPS
+        letterKeys.forEach { it.text = KeyLayouts.applyCaps(it.tag as String, upper) }
+        listener?.onShiftChanged(shiftState == KeyLayouts.ShiftState.CAPS)
     }
 
     private data class KeySpec(
@@ -217,7 +267,7 @@ class KeyboardView(context: Context) : LinearLayout(context) {
         val action: () -> Unit,
     )
 
-    private fun addRow(keys: List<KeySpec>): List<KeyButton> {
+    private fun addRow(keys: List<KeySpec>, heightDp: Int = KEY_ROW_HEIGHT_DP): List<KeyButton> {
         val row = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER
@@ -234,6 +284,7 @@ class KeyboardView(context: Context) : LinearLayout(context) {
                     when {
                         spec.smallText -> KEY_SPACE_LABEL_SP
                         spec.modifier -> KEY_MODIFIER_LABEL_SP
+                        spec.isLetter -> KEY_LETTER_SP
                         else -> KEY_LABEL_SP
                     }
                 )
@@ -245,7 +296,7 @@ class KeyboardView(context: Context) : LinearLayout(context) {
                 onRepeat = spec.onRepeat
                 if (spec.isLetter) tag = spec.label
                 val margin = dp(3)
-                layoutParams = LayoutParams(0, dp(KEY_ROW_HEIGHT_DP), spec.weight).apply {
+                layoutParams = LayoutParams(0, dp(heightDp), spec.weight).apply {
                     setMargins(margin, margin, margin, margin)
                 }
             }
@@ -264,10 +315,16 @@ class KeyboardView(context: Context) : LinearLayout(context) {
         private const val KEY_ROW_HEIGHT_DP = 51
         /** Beat between ?123/ABC tap highlight and the layer swap. */
         private const val SYMBOLS_TOGGLE_DELAY_MS = 120L
-        // Letters + numbers, bumped for visibility (was 19sp). Modifiers stay
-        // one step smaller so ?123 never clips its narrow key. Spacebar label
-        // stays smallest. Heights/widths/spacing unchanged.
+        // Letters-only bump for visibility (+2sp over the shared label size).
+        // Numbers, symbols (?123 layer), comma/period use KEY_LABEL_SP;
+        // modifiers (?123/ABC, Shift, Backspace, Enter) use
+        // KEY_MODIFIER_LABEL_SP; spacebar stays smallest. Single a-z glyphs
+        // still fit at 25sp in the unchanged 51dp keys with 3dp margins, so
+        // heights/widths/spacing/layout are untouched. Pressed backgrounds
+        // and the KeyButton touch path are untouched, so highlight colour
+        // and typing speed are unchanged.
         private const val KEY_LABEL_SP = 23f
+        private const val KEY_LETTER_SP = 25f
         private const val KEY_MODIFIER_LABEL_SP = 21f
         private const val KEY_SPACE_LABEL_SP = 14f
     }

@@ -12,6 +12,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.widget.AppCompatImageButton
 import androidx.core.content.ContextCompat
+import app.vboard.suggest.SuggestionStripView
 
 class TopBarView @JvmOverloads constructor(
     context: Context,
@@ -38,6 +39,7 @@ class TopBarView @JvmOverloads constructor(
     private var cancelButton: TextView? = null
     private var confirmButton: TextView? = null
     private var recordStartMs = 0L
+    private lateinit var strip: SuggestionStripView
 
     private val timerTick = object : Runnable {
         override fun run() {
@@ -57,6 +59,28 @@ class TopBarView @JvmOverloads constructor(
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
             layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
         }
+        // Far-left spacer: one invisible "M" at suggestion text size,
+        // then the 3-slot strip (weight 1, GONE when empty), then the
+        // unchanged Voice / Undo / AI buttons.
+        idleRow.addView(
+            TextView(context).apply {
+                text = "M"
+                setTextSize(
+                    android.util.TypedValue.COMPLEX_UNIT_SP,
+                    SuggestionStripView.SUGGESTION_TEXT_SP,
+                )
+                visibility = INVISIBLE
+                isFocusable = false
+                layoutParams = LayoutParams(
+                    LayoutParams.WRAP_CONTENT,
+                    LayoutParams.WRAP_CONTENT,
+                )
+            }
+        )
+        strip = SuggestionStripView(context).apply {
+            layoutParams = LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)
+        }
+        idleRow.addView(strip)
         idleRow.addView(
             makeButton("Voice input", R.drawable.topbar_button_background, VoiceBarsDrawable(context)) {
                 listener?.onVoiceClick()
@@ -148,6 +172,7 @@ class TopBarView @JvmOverloads constructor(
         idleRow.visibility = GONE
         agentRow.visibility = GONE
         pill.visibility = VISIBLE
+        strip.clear()
         setPillEnabled(true)
         wave.reset()
         startTimer()
@@ -157,6 +182,7 @@ class TopBarView @JvmOverloads constructor(
         idleRow.visibility = GONE
         agentRow.visibility = GONE
         pill.visibility = VISIBLE
+        strip.clear()
         stopTimer()
         setPillEnabled(false)
     }
@@ -165,6 +191,7 @@ class TopBarView @JvmOverloads constructor(
     fun showAgentWorking() {
         idleRow.visibility = GONE
         pill.visibility = GONE
+        strip.clear()
         stopTimer()
         wave.reset()
         agentRow.visibility = VISIBLE
@@ -173,6 +200,19 @@ class TopBarView @JvmOverloads constructor(
     /** Undo is visible only in the idle bar, after an AI edit. */
     fun setUndoVisible(visible: Boolean) {
         undoButton?.visibility = if (visible) VISIBLE else GONE
+    }
+
+    /** Shows word suggestions in the idle strip; no-op when empty. */
+    fun showSuggestions(words: List<String>) {
+        strip.setSuggestions(words)
+    }
+
+    fun clearSuggestions() {
+        strip.clear()
+    }
+
+    fun setOnSuggestionPick(onPick: ((String) -> Unit)?) {
+        strip.onPick = onPick
     }
 
     override fun onDetachedFromWindow() {
