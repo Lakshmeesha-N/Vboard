@@ -31,3 +31,22 @@ Test-only:
 `app/src/test/java/app/vboard/ExampleUnitTest.kt` is the Android Studio
 template sample (kept). Everything under `app.vboard` is hand-written for
 Vboard; no code is copied from other keyboard projects.
+
+## Word list
+
+English word suggestions ship an on-device asset,
+`app/src/main/assets/words_en.txt` (20,000 words, `word<TAB>rank` per line),
+built by `tools/suggest/build_words.py` from `tools/suggest/core_words.txt`
+(hand-ordered core-100, rank = line order) topped up from the 12dicts lists.
+The asset is on-device only: it ships in the APK, is read locally at runtime,
+and is never uploaded anywhere.
+
+Word-list sources:
+
+- **12dicts** (Alan Beale) — public domain; the compiler requests
+  acknowledgment of use. Used bands: `3esl.txt`, `2of4brif.txt`
+  (`2of12inf` is never used).
+- **SCOWL / ESDB** (Kevin Atkinson, Copyright 2000-2018) — MIT-like:
+  permission to use, copy, modify, distribute, and sell the word lists and
+  derived output is granted without fee, provided the copyright notice
+  appears in all copies and both notices appear in supporting documentation.
