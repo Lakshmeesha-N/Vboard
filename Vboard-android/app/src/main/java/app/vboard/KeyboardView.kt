@@ -249,7 +249,14 @@ class KeyboardView(context: Context) : LinearLayout(context) {
         key.text = KeyLayouts.SHIFT_LABEL
         key.setCapsOn(upper)
         key.isSelected = shiftState == KeyLayouts.ShiftState.CAPS
-        letterKeys.forEach { it.text = KeyLayouts.applyCaps(it.tag as String, upper) }
+        // Capitals render at the original label size (23sp); lowercase keeps
+        // the +2sp bump (25sp). The toggle already relabels every key on this
+        // frame, so typing itself costs no extra layout pass.
+        val letterSp = if (upper) KEY_LABEL_SP else KEY_LETTER_SP
+        letterKeys.forEach {
+            it.text = KeyLayouts.applyCaps(it.tag as String, upper)
+            it.setTextSize(TypedValue.COMPLEX_UNIT_SP, letterSp)
+        }
         listener?.onShiftChanged(shiftState == KeyLayouts.ShiftState.CAPS)
     }
 
