@@ -99,7 +99,12 @@ class TopBarView @JvmOverloads constructor(
             idleRow.addView(it)
         }
         idleRow.addView(
-            makeButton("AI actions", R.drawable.ai_ring_background, null) {
+            makeButton(
+                "AI actions",
+                R.drawable.ai_ring_background,
+                null,
+                AI_BUTTON_DP,
+            ) {
                 listener?.onAiClick()
             }
         )
@@ -326,6 +331,8 @@ class TopBarView @JvmOverloads constructor(
         private const val BUTTON_DP = 40
         /** Voice record button: layout, draw and touch, all 42dp. */
         private const val VOICE_BUTTON_DP = 42
+        /** Cleanup (AI) button: 2dp smaller than stock, voice untouched. */
+        private const val AI_BUTTON_DP = 38
         private const val GAP_DP = 8
         private const val WAVE_HEIGHT_DP = 40
 
