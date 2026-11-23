@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vboard — Speak how you think. Write how you want.</title>
+<script>
+/* ============================================================
+   EDIT ME — loop cost and repo link live here.
+   Screenshots load from ../docs/images/ (offline, no network).
+   ============================================================ */
+const CONFIG = {
+  LOOP_STEPS: 8,        // problem: how many steps the copy-paste loop takes
+  LOOP_SECONDS: 45,     // problem: seconds the loop costs, every time
+  REPO_URL: ""          // e.g. "github.com/you/vboard"
+};
+</script>
+<style>
+:root{--bg:#121316;--card:#282A2F;--line:#3A3D44;--txt:#fff;--mut:#B9BDC7;--dim:#6B7078;--a1:#60A5FA;--a2:#A78BFA;--warn:#FBBF24;}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--txt);font-family:"Noto Sans Kannada","Noto Sans Devanagari","Noto Sans Telugu","Noto Sans Tamil",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.6}
+.wrap{max-width:1180px;margin:0 auto;padding:0 40px}
+nav{position:sticky;top:0;z-index:5;background:rgba(18,19,22,.94);border-bottom:1px solid var(--line)}
+nav .wrap{display:flex;align-items:center;gap:30px;padding:16px 40px}
+.logo{font-size:26px;font-weight:800}
+nav a{color:var(--mut);text-decoration:none;font-size:17px}
+nav a:hover{color:#fff}
+nav .sp{flex:1}
+.btn{display:inline-block;background:linear-gradient(90deg,var(--a1),var(--a2));color:#0B0C0E;font-weight:700;font-size:18px;border-radius:12px;padding:13px 30px;text-decoration:none}
+.btn.ghost{background:none;color:var(--txt);border:1px solid var(--line)}
+header.hero{padding:110px 0 90px;text-align:center}
+.hero h1{font-size:76px;line-height:1.12;letter-spacing:-1px;max-width:1000px;margin:0 auto 22px}
+.grad{background:linear-gradient(90deg,var(--a1),var(--a2));-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero p{color:var(--mut);font-size:26px;max-width:760px;margin:0 auto 38px}
+.hero .cta{display:flex;gap:16px;justify-content:center}
+section{padding:70px 0;border-top:1px solid #1E2025}
+.kick{font-size:15px;letter-spacing:3px;color:var(--a1);font-weight:700;margin-bottom:14px}
+h2.t{font-size:46px;letter-spacing:-.5px;margin-bottom:14px}
+.sub{color:var(--mut);font-size:22px;max-width:820px;margin-bottom:36px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:32px 30px}
+.card h3{font-size:28px;margin-bottom:10px}
+.card p{color:var(--mut);font-size:20px}
+.card .ic{font-size:36px}
+.note{margin-top:22px;color:var(--mut);font-size:19px;text-align:center}
+/* screenshots (from docs/images, work offline) */
+.cardimg{width:100%;height:340px;object-fit:cover;object-position:bottom;border-radius:12px;border:1px solid var(--line);display:block;margin-bottom:18px}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px}
+.pair figure{background:#1E2025;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.pair img{width:100%;height:280px;object-fit:cover;object-position:bottom;display:block}
+.pair img.top{object-position:top}
+.pair figcaption{padding:8px;font-size:15px;color:var(--mut);text-align:center}
+.lookimg{max-width:400px;margin:0 auto}
+.lookimg img{width:100%;height:520px;object-fit:cover;object-position:bottom;border-radius:22px;border:1px solid var(--line);display:block}
+/* problem loop */
+.prob{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}
+ol.loop{list-style:none;display:flex;flex-direction:column;gap:10px}
+ol.loop li{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 22px;font-size:21px}
+ol.loop li b{color:var(--dim);margin-right:12px}
+.pain{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:32px 34px}
+.pain .big{font-size:64px;font-weight:800}
+.pain p{color:var(--mut);font-size:21px;margin-top:8px}
+.tag{display:inline-block;background:#1E2025;border:1px solid var(--line);border-radius:999px;padding:6px 20px;font-size:16px;color:var(--mut);margin-bottom:16px}
+/* how it works */
+.lane{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px 26px;font-size:21px;display:flex;gap:14px;align-items:center;justify-content:center;margin-bottom:14px;flex-wrap:wrap}
+.lane .arw{color:var(--a1);font-weight:800}
+.code{font-family:ui-monospace,Consolas,monospace;background:#1E2025;border-radius:8px;padding:2px 12px;font-size:19px}
+.end{text-align:center;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px;font-size:23px}
+.tbd{color:var(--warn);border:2px dashed var(--warn);border-radius:10px;padding:0 16px;font-size:38px}
+/* privacy / limits */
+.priv{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;text-align:center}
+.priv .card{font-size:24px;font-weight:700}
+.priv .card small{display:block;font-weight:400;color:var(--mut);font-size:18px;margin-top:8px}
+ul.lim{list-style:none;display:flex;flex-direction:column;gap:14px;font-size:23px;max-width:820px}
+ul.lim li{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 26px}
+ul.lim li::before{content:"— ";color:var(--a1)}
+/* close */
+.close{text-align:center;padding:90px 0}
+.close h2{font-size:56px;margin-bottom:20px}
+.repo{display:inline-block;background:var(--card);border:1px solid var(--line);font-size:26px;border-radius:14px;padding:18px 46px;margin-top:26px}
+footer{border-top:1px solid var(--line);padding:26px 0;color:var(--dim);font-size:16px;text-align:center}
+/* reveal */
+.rv{opacity:0;transform:translateY(16px);transition:opacity .45s ease,transform .45s ease}
+.rv.vis{opacity:1;transform:none}
+@media(max-width:900px){.grid3,.priv,.prob,.pair{grid-template-columns:1fr}.hero h1{font-size:48px}}
+</style>
+</head>
+<body>
+<nav><div class="wrap">
+<div class="logo">Vboard</div><div class="sp"></div>
+<a href="#problem">Problem</a><a href="#app">App</a><a href="#how">How it works</a><a href="#privacy">Privacy</a>
+</div></nav>
+
+<header class="hero wrap">
+<h1 class="rv">Speak how you think.<br><span class="grad">Write how you want.</span></h1>
+<p class="rv">Vboard is a voice keyboard: speak in your language, fix text by voice, and ask questions — right inside any text box, with Undo.</p>
+<div class="cta rv"><a class="btn" href="#app">See what it does</a><a class="btn ghost" href="#how">How it works</a></div>
+</header>
+
+<section id="problem"><div class="wrap">
+<div class="kick rv">THE PROBLEM</div>
+<h2 class="t rv">Typing in your own language is a relay race</h2>
+<p class="sub rv">Today, sending one message in your language means leaving the app, converting it elsewhere, and pasting it back — then fixing what broke.</p>
+<div class="prob">
+<ol class="loop rv" id="loop"></ol>
+<div class="pain rv"><span class="tag">Recreated scenario</span><div class="big"><span id="lc">8 steps</span> · ⏱ <span id="lt">~45 sec</span></div>
+<p>That is the cost <b>every single time</b> — for a message, an email, a form, a comment. The current system taxes every sentence you write in your own language.</p></div>
+</div></div></section>
+
+<section id="app"><div class="wrap">
+<div class="kick rv">THE APP</div>
+<h2 class="t rv">Why use Vboard</h2>
+<p class="sub rv">One keyboard that replaces the whole relay. It works wherever your keyboard appears — messages, mail, forms, comments.</p>
+<div class="grid3">
+<div class="card rv"><img class="cardimg" src="../docs/images/image1.png" alt="Vboard recording a voice message in Gmail"><div class="ic">🎙</div><h3>Speak</h3><p>Talk in Kannada, Hindi, English, Telugu — or mix them. Speech becomes clean text in your own language, right in the box.</p></div>
+<div class="card rv"><div class="pair"><figure><img src="../docs/images/after_circle.png" alt="Messy text before cleanup"><figcaption>Before</figcaption></figure><figure><img src="../docs/images/image3.png" alt="Clean text after cleanup"><figcaption>After</figcaption></figure></div><div class="ic">✏️</div><h3>Edit</h3><p>Messy in, clean out — rewrite the whole text box by voice. Undo is always one tap away.</p></div>
+<div class="card rv"><div class="pair"><figure><img src="../docs/images/before_circle.png" alt="Question typed with @agent"><figcaption>You ask</figcaption></figure><figure><img class="top" src="../docs/images/image2.png" alt="Agent answer written into the chat"><figcaption>You get</figcaption></figure></div><div class="ic">✨</div><h3>Ask</h3><p>Type <span class="code">@agent</span> and the keyboard writes or answers inside the text box — drafts, replies, explanations.</p></div>
+</div>
+<p class="note rv">No switching apps. No copy-paste relay. Speak, fix, send.</p>
+</div></section>
+
+<section id="look"><div class="wrap">
+<div class="kick rv">HOW IT LOOKS</div>
+<h2 class="t rv">A keyboard, not another app</h2>
+<p class="sub rv">The voice controls live on the keyboard itself. Real screenshots from the app.</p>
+<div class="lookimg rv"><img src="../docs/images/image.png" alt="Vboard keyboard inside Gmail"></div>
+</div></section>
+
+<section id="how"><div class="wrap">
+<div class="kick rv">HOW IT WORKS</div>
+<h2 class="t rv">Two buttons, one backend</h2>
+<p class="sub rv">Voice and questions travel two short paths through the same server, and both land back in your text box.</p>
+<div class="lane rv"><span>🎙 Mic</span><span class="arw">→</span><span class="code">/v1/process</span><span class="arw">→</span><span>Speech to text</span><span class="arw">→</span><span>Insert / rewrite</span></div>
+<div class="lane rv"><span>✨ Ring</span><span class="arw">→</span><span class="code">/v1/agent</span><span class="arw">→</span><span>Router (starts with @agent?)</span><span class="arw">→</span><span>Cleanup or Agent + search</span></div>
+<div class="end rv">⌨️ The keyboard applies the result — <b>with Undo</b></div>
+</div></section>
+
+<section id="privacy"><div class="wrap">
+<div class="kick rv">PRIVACY</div>
+<h2 class="t rv">Your words stay yours</h2>
+<div class="priv">
+<div class="card rv">No audio stored<small>Voice is processed and dropped — never saved.</small></div>
+<div class="card rv">No text logged<small>The server counts requests, never reads content.</small></div>
+<div class="card rv"><span class="grad">Open source</span><small>Anyone can inspect what the code actually does.</small></div>
+</div></div></section>
+
+<section class="close"><div class="wrap">
+<h2 class="rv">For everyone whose language<br>is <span class="grad">bigger than their English.</span></h2>
+<div class="rv"><a class="btn" href="#top" id="trybtn">Get Vboard</a></div>
+<div class="repo rv" id="repo"></div>
+</div></section>
+
+<footer>Vboard — voice keyboard · works offline (screenshots load from docs/images)</footer>
+
+<script>
+const C = CONFIG;
+// problem loop
+const steps = ["Write in your language","Copy it","Open a translator","Paste it there","Copy the result","Switch back to your app","Paste it in","Fix what broke"];
+document.getElementById("loop").innerHTML = steps.map((s, k) => `<li><b>${k + 1}</b>${s}</li>`).join("");
+document.getElementById("lc").textContent = C.LOOP_STEPS + " steps";
+document.getElementById("lt").textContent = "~" + C.LOOP_SECONDS + " sec";
+// repo
+const repo = document.getElementById("repo");
+repo.innerHTML = C.REPO_URL ? `🔗 ${C.REPO_URL}` : `<span class="tbd" style="font-size:24px">TBD — paste repo URL in CONFIG</span>`;
+if (C.REPO_URL) document.getElementById("trybtn").href = "https://" + C.REPO_URL.replace(/^https?:\/\//, "");
+// scroll reveal
+const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) io.unobserve(e.target) || e.target.classList.add("vis"); }), {threshold: .12});
+document.querySelectorAll(".rv").forEach(el => io.observe(el));
+</script>
+</body>
+</html>

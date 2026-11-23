@@ -30,11 +30,21 @@ async def process_audio(
 
     if len(wav_bytes) > settings.MAX_AUDIO_BYTES:
         max_mb = settings.MAX_AUDIO_BYTES // (1024 * 1024)
+        logger.warning(
+            "Rejecting audio: reason=size_limit bytes={} limit_bytes={} device={}",
+            len(wav_bytes),
+            settings.MAX_AUDIO_BYTES,
+            device_id or "none",
+        )
         raise HTTPException(
             status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail=f"Audio payload exceeds maximum size limit of {max_mb} MB",
         )
     if not wav_bytes:
+        logger.warning(
+            "Rejecting audio: reason=empty_payload device={}",
+            device_id or "none",
+        )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Audio payload is empty",

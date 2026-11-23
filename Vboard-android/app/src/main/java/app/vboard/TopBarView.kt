@@ -59,12 +59,13 @@ class TopBarView @JvmOverloads constructor(
             gravity = Gravity.END or Gravity.CENTER_VERTICAL
             layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
         }
-        // Far-left spacer: one invisible "M" at suggestion text size,
-        // then the 3-slot strip (weight 1, GONE when empty), then the
-        // unchanged Voice / Undo / AI buttons.
+        // Far-left spacer: two invisible "M"s at suggestion text size,
+        // reserving room for a future clipboard button. Then the 3-slot
+        // strip (weight 1, GONE when empty), then the unchanged
+        // Voice / Undo / AI buttons.
         idleRow.addView(
             TextView(context).apply {
-                text = "M"
+                text = "MM"
                 setTextSize(
                     android.util.TypedValue.COMPLEX_UNIT_SP,
                     SuggestionStripView.SUGGESTION_TEXT_SP,
@@ -87,7 +88,6 @@ class TopBarView @JvmOverloads constructor(
                 R.drawable.topbar_button_background,
                 VoiceBarsDrawable(context),
                 VOICE_BUTTON_DP,
-                VOICE_DRAW_SCALE,
             ) {
                 listener?.onVoiceClick()
             }
@@ -169,6 +169,7 @@ class TopBarView @JvmOverloads constructor(
         idleRow.visibility = VISIBLE
         pill.visibility = GONE
         agentRow.visibility = GONE
+        strip.clear()
         stopTimer()
         setPillEnabled(true)
         wave.reset()
@@ -251,7 +252,6 @@ class TopBarView @JvmOverloads constructor(
         backgroundRes: Int,
         icon: Drawable?,
         buttonDp: Int = BUTTON_DP,
-        drawScale: Float = BUTTON_ICON_SCALE,
         onDown: () -> Unit,
     ): AppCompatImageButton {
         return AppCompatImageButton(context).apply {
@@ -265,11 +265,6 @@ class TopBarView @JvmOverloads constructor(
             layoutParams = LayoutParams(size, size).apply {
                 marginStart = dp(GAP_DP)
             }
-            // GPU-only draw shrink/grow: no extra measure/layout pass.
-            // AI draws at ~36dp inside 40dp touch bounds; Voice draws
-            // full-size at 48dp. Spacing and the strip weight are untouched.
-            scaleX = drawScale
-            scaleY = drawScale
             setDownHaptic(onDown)
         }
     }
@@ -328,14 +323,9 @@ class TopBarView @JvmOverloads constructor(
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     companion object {
-        /** Touch/layout size for the AI ring; drawn scaled to ~36dp. */
         private const val BUTTON_DP = 40
-        /** 36/40: ~10% smaller AI draw, identical look, gradient, spacing. */
-        private const val BUTTON_ICON_SCALE = 0.9f
-        /** Voice record button: layout, draw and touch, all 48dp. */
-        private const val VOICE_BUTTON_DP = 48
-        /** Voice draws full-size (no shrink). */
-        private const val VOICE_DRAW_SCALE = 1f
+        /** Voice record button: layout, draw and touch, all 42dp. */
+        private const val VOICE_BUTTON_DP = 42
         private const val GAP_DP = 8
         private const val WAVE_HEIGHT_DP = 40
 

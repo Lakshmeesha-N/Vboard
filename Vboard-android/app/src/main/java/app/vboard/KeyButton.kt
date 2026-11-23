@@ -49,6 +49,12 @@ class KeyButton @JvmOverloads constructor(
     init {
         isFocusable = false
         isClickable = true
+        // Touch latency trims: no lift animation and no system click sound on
+        // the tap path (haptic in onTouchEvent already confirms the press).
+        // Typing behavior is unchanged.
+        stateListAnimator = null
+        isSoundEffectsEnabled = false
+        isHapticFeedbackEnabled = true
         setModifier(false)
         minHeight = 0
         minimumHeight = 0

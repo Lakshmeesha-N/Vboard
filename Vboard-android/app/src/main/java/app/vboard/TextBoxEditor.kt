@@ -3,6 +3,7 @@ package app.vboard
 import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
+import app.vboard.suggest.CurrentWord
 
 class TextBoxEditor(private val connection: () -> InputConnection?) {
 
@@ -138,6 +139,52 @@ class TextBoxEditor(private val connection: () -> InputConnection?) {
         }
     }
 
+    /**
+     * Trailing word before the cursor for suggestions. Null when the box is
+     * unreadable OR a selection is active (both mean "hide the strip").
+     * "" means no completable word (space, punctuation, empty box).
+     */
+    fun readWordBeforeCursor(maxChars: Int = SUGGEST_WORD_LOOKBACK): String? {
+        val ic = connection() ?: return null
+        return try {
+            if (ic.getSelectedText(0)?.isNotEmpty() == true) return null
+            val before = ic.getTextBeforeCursor(maxChars, 0)?.toString() ?: return null
+            CurrentWord.extract(before)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Replaces [charsToDelete] chars before the cursor with [replacement].
+     * Rejects when a selection is active (rechecked here so a strip tap can
+     * never clobber selected text). Counts are UTF-16 units; suggestion
+     * words are ASCII so units and code points agree.
+     */
+    fun replaceTrailingWord(charsToDelete: Int, replacement: String): Boolean {
+        if (charsToDelete <= 0 || replacement.isEmpty()) return false
+        val ic = connection() ?: return false
+        ic.beginBatchEdit()
+        return try {
+            if (ic.getSelectedText(0)?.isNotEmpty() == true) return false
+            ic.deleteSurroundingTextInCodePoints(charsToDelete, 0)
+            ic.commitText(replacement, 1)
+            true
+        } catch (_: Exception) {
+            false
+        } finally {
+            try {
+                ic.endBatchEdit()
+            } catch (_: Exception) {
+                // Teardown must never crash the IME.
+            }
+        }
+    }
+
+    companion object {
+        /** Chars of lookback for the trailing word; words are short. */
+        private const val SUGGEST_WORD_LOOKBACK = 32
+    }
     /** Puts the cursor at the end of `charLength` chars (used after Undo). */
     fun moveCursorToEnd(charLength: Int): Boolean {
         val ic = connection() ?: return false

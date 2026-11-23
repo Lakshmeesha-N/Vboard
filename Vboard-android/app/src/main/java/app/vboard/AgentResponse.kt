@@ -2,12 +2,9 @@ package app.vboard
 
 import org.json.JSONObject
 
-/** Mirrors `AgentResponse` in contract/openapi.json. Never carries `languages`. */
+/** Mirrors `AgentResponse` in backend `app/schemas/agent.py`. Never carries `languages`. */
 data class AgentResponse(
     val text: String,
-    val usedSearch: Boolean,
-    val rounds: Int,
-    val note: String?,
 )
 
 /**
@@ -23,14 +20,10 @@ object AgentResponseParser {
         } catch (_: Exception) {
             return null
         }
-        if (!root.has("text") || !root.has("used_search") || !root.has("rounds")) return null
+        if (!root.has("text") || root.isNull("text")) return null
         val text = root.optString("text", null as String?) ?: return null
-        val note = root.optString("note", null as String?)
         return AgentResponse(
             text = text,
-            usedSearch = root.optBoolean("used_search", false),
-            rounds = root.optInt("rounds", 0),
-            note = note,
         )
     }
 

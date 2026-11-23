@@ -20,6 +20,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import app.vboard.suggest.SuggestionController
 import java.util.Arrays
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -46,6 +47,9 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
     /** One-level Undo: full box text saved before an AI insert/rewrite. */
     private var undoText: String? = null
 
+    /** English word suggestions; loads words_en.txt lazily, survives view recreates. */
+    private var suggestController: SuggestionController? = null
+
     /** Full box text snapshotted at ✓; rewrite applies only if it still matches. */
     private var snapshotFull = ""
 
@@ -59,6 +63,22 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
         return KeyboardView(this).also {
             it.listener = this
             it.topBarListener = this
+            val controller = suggestController ?: SuggestionController(
+                scope = serviceScope,
+                openWordList = {
+                    try {
+                        assets.open("words_en.txt")
+                    } catch (_: Exception) {
+                        null
+                    }
+                },
+                onSuggestions = { words ->
+                    if (words.isEmpty()) keyboardView?.clearSuggestions()
+                    else keyboardView?.showSuggestions(words)
+                },
+            ).also { created -> suggestController = created }
+            it.setOnSuggestionPick { word -> pickSuggestion(word) }
+            controller.start()
             keyboardView = it
         }
     }
@@ -69,6 +89,8 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
         clearUndo()
         keyboardView?.showLetters()
         keyboardView?.refreshInsets()
+        if (!restarting) maybeAutoCapitalize()
+        updateSuggestions()
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
@@ -91,17 +113,39 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
         keyboardView?.topBarListener = null
         keyboardView = null
         editor = null
+        suggestController = null
         super.onDestroy()
+    }
+
+    /**
+     * Cursor moves (tap-to-move) re-query the strip; a new selection hides
+     * it via readWordBeforeCursor. Never changes text, so no loops.
+     */
+    override fun onUpdateSelection(
+        oldSelStart: Int,
+        oldSelEnd: Int,
+        newSelStart: Int,
+        newSelEnd: Int,
+        candidatesStart: Int,
+        candidatesEnd: Int,
+    ) {
+        super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+        updateSuggestions()
     }
 
     override fun onText(text: String) {
         clearUndo()
         editor?.commitText(text)
+        // Gboard-like: typing space after ". " arms one-shot shift.
+        if (text == " ") maybeAutoCapitalize()
+        updateSuggestions()
     }
 
     override fun onBackspace() {
         clearUndo()
+        keyboardView?.clearOneShotShift()
         editor?.deleteCodePointBefore()
+        updateSuggestions()
     }
 
     override fun onBackspaceRepeat(): Boolean {
@@ -110,6 +154,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
         if (keepGoing) {
             clearUndo()
             ed.deleteCodePointBefore()
+            updateSuggestions()
         }
         return keepGoing
     }
@@ -118,6 +163,9 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
         clearUndo()
         val inputType = currentInputEditorInfo?.inputType ?: EditorInfo.TYPE_NULL
         editor?.performEnter(inputType, imeOptions)
+        // Fresh line after Enter reads as a sentence start.
+        maybeAutoCapitalize()
+        updateSuggestions()
     }
 
     override fun onShiftChanged(capsLock: Boolean) = Unit
@@ -467,7 +515,6 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
                     when {
                         outcome.code == 422 -> toast(outcome.errorDetail ?: MSG_AGENT_FAILED)
                         outcome.code != 200 || outcome.response == null -> toast(MSG_AGENT_FAILED)
-                        outcome.response.note == "out_of_scope" -> toast(MSG_CANT_DO)
                         outcome.response.text.isEmpty() -> toast(MSG_AGENT_FAILED)
                         else -> applyAgentRewrite(outcome.response.text)
                     }
@@ -514,8 +561,58 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
         toast(MSG_REWRITTEN)
     }
 
+    /**
+     * Refresh the strip after a commit or cursor move. The commit already
+     * returned, so typing never waits on this; the strip hides for
+     * password fields, unreadable boxes, selections, and non-idle states.
+     */
+    private fun updateSuggestions() {
+        val controller = suggestController ?: return
+        if (recording || sending) {
+            controller.hide()
+            return
+        }
+        val inputType = currentInputEditorInfo?.inputType ?: EditorInfo.TYPE_NULL
+        if (ContextPolicy.isPasswordInputType(inputType)) {
+            controller.hide()
+            return
+        }
+        controller.onCommitted(editor?.readWordBeforeCursor(), password = false, idle = true)
+    }
+
+    /** Strip tap: swap the current word for the pick, keep initial caps. */
+    private fun pickSuggestion(word: String) {
+        if (recording || sending) return
+        val ed = editor ?: return
+        val inputType = currentInputEditorInfo?.inputType ?: EditorInfo.TYPE_NULL
+        if (ContextPolicy.isPasswordInputType(inputType)) return
+        val current = ed.readWordBeforeCursor() ?: return
+        if (current.isEmpty()) return
+        val controller = suggestController ?: return
+        clearUndo()
+        if (ed.replaceTrailingWord(current.length, controller.buildReplacement(current, word))) {
+            updateSuggestions()
+        }
+    }
+
     private fun store(): SettingsStore =
         settings ?: SettingsStore(this).also { settings = it }
+
+    /**
+     * Gboard-like auto-caps: arms one-shot shift at a sentence start
+     * (empty box, fresh line, or after ". "). Reads only a short tail
+     * before the cursor; skips password fields and selections; numbers
+     * only, never logged by this file's conventions.
+     */
+    private fun maybeAutoCapitalize() {
+        val ed = editor ?: return
+        val kv = keyboardView ?: return
+        val inputType = currentInputEditorInfo?.inputType ?: EditorInfo.TYPE_NULL
+        if (ContextPolicy.isPasswordInputType(inputType)) return
+        val cur = ed.readFullText(inputType, AUTOCAPS_LOOKBACK)
+        if (!cur.reliable || cur.selected.isNotEmpty()) return
+        if (KeyLayouts.sentenceNeedsCaps(cur.before)) kv.setShiftSingle()
+    }
 
     private fun openSetup() {
         startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -541,6 +638,8 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
 
     companion object {
         private const val TAG = "VBOARD_NET"
+        /** Chars of lookback for auto-caps; a sentence boundary needs far less. */
+        private const val AUTOCAPS_LOOKBACK = 16
         private const val MSG_NO_CONNECTION = "No connection. Try again."
         private const val MSG_BAD_RECORDING = "Couldn't use that recording. Try again."
         private const val MSG_INSERTED = "Inserted"
@@ -553,7 +652,6 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
         private const val MSG_TEXT_CHANGED = "Text changed. Kept current text."
         private const val MSG_SELECTION_UNSURE = "Couldn't replace selected text. Kept current text."
         private const val MSG_NOTHING_TO_CLEAN = "Nothing to clean up"
-        private const val MSG_CANT_DO = "Can't do that"
         private const val MSG_AGENT_FAILED = "Couldn't clean up. Try again."
     }
 }

@@ -20,7 +20,7 @@ object KeyLayouts {
     const val KEY_PERIOD = "."
     const val KEY_ENTER = "ENTER"
 
-    const val SPACE_LABEL = "English (US)"
+    const val SPACE_LABEL = ""
     const val SHIFT_LABEL = "⇧"
     const val CAPS_LABEL = "⇪"
     const val BACKSPACE_LABEL = "⌫"
@@ -33,6 +33,38 @@ object KeyLayouts {
         }
         return base
     }
+
+    /** Gboard-style three-state shift kept pure for JVM tests. */
+    enum class ShiftState { OFF, SINGLE, CAPS }
+
+    /** Two taps within this window lock caps; a lone tap is one-shot shift. */
+    const val DOUBLE_TAP_TIMEOUT_MS = 300L
+
+    /**
+     * Pure shift-tap transition: OFF always arms one-shot; SINGLE locks when
+     * the tap lands inside the double-tap window, otherwise disarms; CAPS
+     * always disarms. Letter keys consume SINGLE (see KeyboardView).
+     */
+    fun nextShiftState(current: ShiftState, withinDoubleTap: Boolean): ShiftState = when (current) {
+        ShiftState.OFF -> ShiftState.SINGLE
+        ShiftState.SINGLE -> if (withinDoubleTap) ShiftState.CAPS else ShiftState.OFF
+        ShiftState.CAPS -> ShiftState.OFF
+    }
+
+    /** Uppercase key display whenever shift is armed or locked. */
+    fun shiftShowsUppercase(state: ShiftState): Boolean = state != ShiftState.OFF
+
+    private val SentenceEndBeforeCursor = Regex("[.!?…][\"'”’)\\]]?\\s+$")
+
+    /**
+     * Auto-caps rule (Gboard-like): empty box, fresh line, or cursor sitting
+     * after sentence-ending punctuation plus space. Takes only the tail
+     * before the cursor; never logs or stores it.
+     */
+    fun sentenceNeedsCaps(textBeforeCursor: String): Boolean =
+        textBeforeCursor.isEmpty() ||
+            textBeforeCursor.endsWith("\n") ||
+            SentenceEndBeforeCursor.containsMatchIn(textBeforeCursor)
 
     enum class EnterBehavior { NEW_LINE, EDITOR_ACTION, KEY_EVENT }
 

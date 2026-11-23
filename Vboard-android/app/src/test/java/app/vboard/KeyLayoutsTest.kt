@@ -23,8 +23,8 @@ class KeyLayoutsTest {
     }
 
     @Test
-    fun spaceLabel_matchesDesignLanguage() {
-        assertEquals("English (US)", KeyLayouts.SPACE_LABEL)
+    fun spaceLabel_isBlank() {
+        assertEquals("", KeyLayouts.SPACE_LABEL)
     }
 
     @Test
@@ -115,5 +115,56 @@ class KeyLayoutsTest {
     fun repeatTiming_stopsWhenTextboxEmpty() {
         assertTrue(KeyLayouts.RepeatTiming.shouldContinue(true))
         assertFalse(KeyLayouts.RepeatTiming.shouldContinue(false))
+    }
+
+    @Test
+    fun shiftTap_offArmsOneShot() {
+        assertEquals(KeyLayouts.ShiftState.SINGLE, KeyLayouts.nextShiftState(KeyLayouts.ShiftState.OFF, false))
+        assertEquals(KeyLayouts.ShiftState.SINGLE, KeyLayouts.nextShiftState(KeyLayouts.ShiftState.OFF, true))
+    }
+
+    @Test
+    fun shiftTap_slowSecondTapDisarms() {
+        assertEquals(KeyLayouts.ShiftState.OFF, KeyLayouts.nextShiftState(KeyLayouts.ShiftState.SINGLE, false))
+    }
+
+    @Test
+    fun shiftTap_fastSecondTapLocksCaps() {
+        assertEquals(KeyLayouts.ShiftState.CAPS, KeyLayouts.nextShiftState(KeyLayouts.ShiftState.SINGLE, true))
+    }
+
+    @Test
+    fun shiftTap_capsAlwaysDisarms() {
+        assertEquals(KeyLayouts.ShiftState.OFF, KeyLayouts.nextShiftState(KeyLayouts.ShiftState.CAPS, false))
+        assertEquals(KeyLayouts.ShiftState.OFF, KeyLayouts.nextShiftState(KeyLayouts.ShiftState.CAPS, true))
+    }
+
+    @Test
+    fun shiftShowsUppercase_armedAndLocked() {
+        assertFalse(KeyLayouts.shiftShowsUppercase(KeyLayouts.ShiftState.OFF))
+        assertTrue(KeyLayouts.shiftShowsUppercase(KeyLayouts.ShiftState.SINGLE))
+        assertTrue(KeyLayouts.shiftShowsUppercase(KeyLayouts.ShiftState.CAPS))
+    }
+
+    @Test
+    fun sentenceNeedsCaps_emptyBoxAndFreshLine() {
+        assertTrue(KeyLayouts.sentenceNeedsCaps(""))
+        assertTrue(KeyLayouts.sentenceNeedsCaps("hello\n"))
+    }
+
+    @Test
+    fun sentenceNeedsCaps_afterSentencePunctuation() {
+        assertTrue(KeyLayouts.sentenceNeedsCaps("hi. "))
+        assertTrue(KeyLayouts.sentenceNeedsCaps("really?  "))
+        assertTrue(KeyLayouts.sentenceNeedsCaps("wow!\" "))
+        assertTrue(KeyLayouts.sentenceNeedsCaps("ok… "))
+    }
+
+    @Test
+    fun sentenceNeedsCaps_midSentenceStaysLower() {
+        assertFalse(KeyLayouts.sentenceNeedsCaps("hel"))
+        assertFalse(KeyLayouts.sentenceNeedsCaps("hi."))
+        assertFalse(KeyLayouts.sentenceNeedsCaps("hi there "))
+        assertFalse(KeyLayouts.sentenceNeedsCaps("3.14"))
     }
 }
