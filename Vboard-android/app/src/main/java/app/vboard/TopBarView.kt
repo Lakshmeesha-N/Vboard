@@ -82,7 +82,13 @@ class TopBarView @JvmOverloads constructor(
         }
         idleRow.addView(strip)
         idleRow.addView(
-            makeButton("Voice input", R.drawable.topbar_button_background, VoiceBarsDrawable(context)) {
+            makeButton(
+                "Voice input",
+                R.drawable.topbar_button_background,
+                VoiceBarsDrawable(context),
+                VOICE_BUTTON_DP,
+                VOICE_DRAW_SCALE,
+            ) {
                 listener?.onVoiceClick()
             }
         )
@@ -244,6 +250,8 @@ class TopBarView @JvmOverloads constructor(
         description: String,
         backgroundRes: Int,
         icon: Drawable?,
+        buttonDp: Int = BUTTON_DP,
+        drawScale: Float = BUTTON_ICON_SCALE,
         onDown: () -> Unit,
     ): AppCompatImageButton {
         return AppCompatImageButton(context).apply {
@@ -253,10 +261,15 @@ class TopBarView @JvmOverloads constructor(
             scaleType = ImageView.ScaleType.CENTER
             isFocusable = false
             isClickable = true
-            val size = dp(BUTTON_DP)
+            val size = dp(buttonDp)
             layoutParams = LayoutParams(size, size).apply {
                 marginStart = dp(GAP_DP)
             }
+            // GPU-only draw shrink/grow: no extra measure/layout pass.
+            // AI draws at ~36dp inside 40dp touch bounds; Voice draws
+            // full-size at 48dp. Spacing and the strip weight are untouched.
+            scaleX = drawScale
+            scaleY = drawScale
             setDownHaptic(onDown)
         }
     }
@@ -315,7 +328,14 @@ class TopBarView @JvmOverloads constructor(
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     companion object {
+        /** Touch/layout size for the AI ring; drawn scaled to ~36dp. */
         private const val BUTTON_DP = 40
+        /** 36/40: ~10% smaller AI draw, identical look, gradient, spacing. */
+        private const val BUTTON_ICON_SCALE = 0.9f
+        /** Voice record button: layout, draw and touch, all 48dp. */
+        private const val VOICE_BUTTON_DP = 48
+        /** Voice draws full-size (no shrink). */
+        private const val VOICE_DRAW_SCALE = 1f
         private const val GAP_DP = 8
         private const val WAVE_HEIGHT_DP = 40
 
