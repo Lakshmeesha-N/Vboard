@@ -112,8 +112,8 @@ class SuggestionStripView(context: Context) : LinearLayout(context) {
         /** Suggestion label size; the idle-row spacer is two "M"s at this size. */
         const val SUGGESTION_TEXT_SP = 16f
 
-        /** Near-black dividers, ~60% of strip height, 2dp thick, easy to spot. */
-        private const val DIVIDER_COLOR = 0xFF141518
+        /** Mid-grey dividers that stand out on the dark bar, 2dp thick. */
+        private const val DIVIDER_COLOR = 0xFF5A5E66
         private const val DIVIDER_WIDTH_DP = 2
         private const val DIVIDER_HEIGHT_DP = 14
     }
