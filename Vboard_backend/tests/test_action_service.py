@@ -6,7 +6,7 @@ import pytest
 from app.core.exceptions import MetaApiError, RateLimitedError
 from app.services.action_service import (
     ACTION_RESPONSE_FORMAT,
-    SPARK_SYSTEM_PROMPT,
+    VOICE_SYSTEM_PROMPT,
     Action,
     ActionResult,
     parse_action,
@@ -33,10 +33,10 @@ def make_mock_reply(
     )
 
 
-def test_spark_system_prompt_content():
+def test_voice_system_prompt_content():
     """Verify prompt is non-empty and contains required action and which keywords."""
-    assert SPARK_SYSTEM_PROMPT
-    prompt_lower = SPARK_SYSTEM_PROMPT.lower()
+    assert VOICE_SYSTEM_PROMPT
+    prompt_lower = VOICE_SYSTEM_PROMPT.lower()
     for keyword in ("insert", "replace", "rewrite", "first", "last", "all"):
         assert keyword in prompt_lower, f"Keyword '{keyword}' missing from prompt"
 
@@ -372,7 +372,7 @@ async def test_spark_call_has_system_prompt_first_and_user_message_last():
 
     mock_complete.assert_awaited_once()
     args = mock_complete.call_args.args
-    assert args[0] == SPARK_SYSTEM_PROMPT
+    assert args[0] == VOICE_SYSTEM_PROMPT
     assert "<box>my box text</box>\n<spoken>my spoken text</spoken>" == args[1]
     kwargs = mock_complete.call_args.kwargs
     assert kwargs["response_format"] == ACTION_RESPONSE_FORMAT

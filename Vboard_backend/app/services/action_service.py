@@ -6,7 +6,7 @@ from loguru import logger
 
 from app.core.config import settings
 from app.core.exceptions import MetaApiError, RateLimitedError
-from app.prompts import SPARK_SYSTEM_PROMPT
+from app.prompts import VOICE_SYSTEM_PROMPT
 from app.schemas.actions import ACTION_RESPONSE_FORMAT, Action, parse_action
 from app.services import llm_service
 
@@ -85,7 +85,7 @@ async def process(
 
     try:
         reply = await llm_service.complete(
-            SPARK_SYSTEM_PROMPT,
+            VOICE_SYSTEM_PROMPT,
             user_message,
             response_format=ACTION_RESPONSE_FORMAT,
             reasoning_effort=effort,

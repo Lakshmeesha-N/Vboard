@@ -25,7 +25,7 @@ async def cleanup_branch(
     content: str, languages: Optional[str] = None
 ) -> AgentResult:
     """Execute grammar, punctuation, and translation cleanup using LLM."""
-    system_prompt = _load_prompt("cleanup_system.md")
+    system_prompt = _load_prompt("text_system.md")
 
     async def _call_complete() -> llm_service.LLMResult:
         return await llm_service.complete(
