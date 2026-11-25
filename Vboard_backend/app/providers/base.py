@@ -9,6 +9,8 @@ knowing its concrete type.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from typing import Any, Optional, Protocol, runtime_checkable
 
 
@@ -19,6 +21,19 @@ from typing import Any, Optional, Protocol, runtime_checkable
 
 # TranscriptionResult is defined in stt_service; re-import at usage sites.
 # LLMResult is defined in llm_service; re-import at usage sites.
+
+
+@dataclass(frozen=True)
+class StreamEvent:
+    """
+    One event from a streaming transcription session.
+
+    A session yields zero or more partial events (display-only text)
+    followed by exactly one final event carrying the transcript.
+    """
+
+    kind: str  # "partial" | "final"
+    text: str
 
 
 @runtime_checkable
@@ -53,6 +68,31 @@ class BaseSTTProvider(Protocol):
         """
         ...
 
+    async def stream_transcribe(
+        self,
+        audio_chunks: AsyncIterator[bytes],
+        languages: Optional[list[str]] = None,
+    ) -> AsyncIterator[StreamEvent]:
+        """
+        Stream raw audio chunks, yielding partials then one final event.
+
+        Args:
+            audio_chunks: Async iterator of raw audio bytes. Chunk framing
+                          (size, encoding, headers) is provider-specific.
+            languages: Optional list of language-bias hints
+                       (canonical names like ["Kannada", "English"]).
+
+        Yields:
+            StreamEvent(kind="partial", ...) zero or more times, then
+            exactly one StreamEvent(kind="final", ...) with the transcript.
+
+        Raises:
+            InvalidAudioError: If the audio is rejected by the provider.
+            RateLimitedError: On HTTP 429 / quota exhausted.
+            MetaApiError: On provider 5xx / network errors.
+        """
+        ...
+
 
 @runtime_checkable
 class BaseLLMProvider(Protocol):
@@ -70,7 +110,7 @@ class BaseLLMProvider(Protocol):
         response_format: Optional[dict[str, Any]] = None,
         reasoning_effort: Optional[str] = None,
     ) -> Any:
-        """
+        """tell
         Single-turn chat completion.
 
         Args:
