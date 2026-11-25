@@ -28,6 +28,7 @@ async def run(
     languages: Optional[list[str]] = None,
     read_ms: float = 0.0,
     context_text: str = "",
+    app: Optional[str] = None,
 ) -> PipelineResult:
     """
     Execute speech processing pipeline: guardrail -> STT -> Spark action_service.
@@ -49,7 +50,7 @@ async def run(
 
     # Stage 3: Spark Action Service
     spark_start = time.perf_counter()
-    action_res = await action_service.process(stt_res.transcript, context_text)
+    action_res = await action_service.process(stt_res.transcript, context_text, app=app)
     spark_ms = (time.perf_counter() - spark_start) * 1000.0
 
     pipeline_elapsed_ms = (time.perf_counter() - total_start) * 1000.0

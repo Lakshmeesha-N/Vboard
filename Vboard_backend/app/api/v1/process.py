@@ -22,6 +22,7 @@ async def process_audio(
     languages: Optional[str] = Form(None),
     context_text: Optional[str] = Form(None),
     device_id: Optional[str] = Form(None),
+    app: Optional[str] = Form(None, description="Source app name, e.g. Gmail"),
 ) -> ProcessResponse:
     """Thin HTTP endpoint for speech processing."""
     read_start = time.perf_counter()
@@ -59,6 +60,7 @@ async def process_audio(
         languages=parsed_langs,
         read_ms=read_ms,
         context_text=context_text or "",
+        app=app,
     )
 
     # Always log timing numbers with device_id (numbers and reason codes only)

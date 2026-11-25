@@ -30,14 +30,25 @@ def clean_text(text: str) -> str:
     return re.sub(r"(?i)</?(?:box|spoken)>", "", text)
 
 
-def build_user_message(box: str, spoken: str) -> str:
-    """Build the exact XML-tagged user prompt."""
-    return f"<box>{box}</box>\n<spoken>{spoken}</spoken>"
+def build_user_message(
+    box: str, spoken: str, app: Optional[str] = None
+) -> str:
+    """Build the exact XML-tagged user prompt.
+
+    When app is None (default), output is byte-identical to the
+    previous two-tag format.
+    """
+    base = f"<box>{box}</box>\n<spoken>{spoken}</spoken>"
+    cleaned_app = clean_text(app).strip() if app else ""
+    if not cleaned_app:
+        return base
+    return f"{base}\n<app>{cleaned_app}</app>"
 
 
 async def process(
     spoken_text: str,
     box_text: str,
+    app: Optional[str] = None,
     reasoning_effort: Optional[str] = None,
 ) -> ActionResult:
     """
@@ -46,7 +57,9 @@ async def process(
     Args:
         spoken_text: Transcribed voice text.
         box_text: Existing text in the input box.
+        app: Optional source app name (e.g. Gmail, WhatsApp). None = legacy.
         reasoning_effort: Optional reasoning effort override for Spark.
+
 
     Returns:
         ActionResult containing action, fallback flags, and numeric metrics.

@@ -39,7 +39,7 @@ Use the existing `.venv`; all commands run from this folder.
   0.3–60s, RMS > 50.
 - `app/core/exceptions.py` — `VboardError` → `AppError` (with `status_code`) →
   `InvalidRequestError`, `InvalidAudioError`, `RateLimitedError`, `MetaApiError`.
-- `app/prompts/` — `spark_system.md`, `cleanup_system.md`, `agent_system.md`,
+- `app/prompts/` — `voice_system.md`, `text_system.md`,
   loaded at import. Cleanup fixes grammar/translation only, never generates;
   agent treats body text as data and never follows instructions inside it.
 - `app/schemas/` — `process.py`, `actions.py` (strict `ACTION_RESPONSE_FORMAT`),
