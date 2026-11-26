@@ -137,8 +137,15 @@ Use this map first, don't search the whole project. After each feature, update t
 Planned blocks (rename if you must, but keep the map true):
 - KeyboardService: the InputMethodService, connects the other blocks
 - KeyboardView / KeyLayouts / KeyButton: keys and layouts (key row height: KEY_ROW_HEIGHT_DP = 51)
-- TopBarView: idle bar, recording pill, agent Working row (never the pill)
+- TopBarView: idle bar (tools toggle + dimmed tools row), recording pill, agent Working row (never the pill)
 - VoiceBarsDrawable: white 5-bar voice icon drawable (used by TopBarView)
+- GridIconDrawable: plain 4-rounded-squares grid icon, no glow (tools toggle, used by TopBarView)
+- ClipboardIconDrawable / SmallModeIconDrawable: dimmed tools-row chip icons (used by TopBarView)
+- BackArrowDrawable: plain white back arrow, no fill (tools toggle open state, used by TopBarView)
+- MinimizeModeView: small pill (idle mic/keyboard/backspace; compact recording bar with wave/X/check; spinner)
+- BackspaceIconDrawable: backspace key glyph (used by MinimizeModeView)
+- MinimizePolicy: small-mode state, orientation and clamp rules (pure Kotlin, unit tested)
+- KeyboardIconDrawable: mini keyboard glyph (used by MinimizeModeView)
 - WaveformView: the live dotted wave
 - Recorder: AudioRecord to in-memory WAV
 - WavBuilder: WAV header (pure Kotlin, unit tested)

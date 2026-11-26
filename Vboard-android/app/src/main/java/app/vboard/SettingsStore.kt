@@ -60,6 +60,44 @@ class SettingsStore(context: Context) {
         prefs.edit { putBoolean(KEY_MIC_REQUESTED, true) }
     }
 
+    fun isMinimized(): Boolean = prefs.getBoolean(KEY_MINIMIZED, false)
+
+    fun setMinimized(value: Boolean) {
+        prefs.edit { putBoolean(KEY_MINIMIZED, value) }
+    }
+
+    /** Saved pill top-left in px; null when never placed. */
+    fun getMinimizePosition(): Pair<Int, Int>? {
+        val x = prefs.getInt(KEY_MINIMIZE_X, -1)
+        val y = prefs.getInt(KEY_MINIMIZE_Y, -1)
+        return if (x < 0 || y < 0) null else x to y
+    }
+
+    fun setMinimizePosition(x: Int, y: Int) {
+        prefs.edit {
+            putInt(KEY_MINIMIZE_X, x)
+            putInt(KEY_MINIMIZE_Y, y)
+        }
+    }
+
+    fun getMinimizeOrientation(): MinimizePolicy.Orientation {
+        return if (prefs.getString(KEY_MINIMIZE_ORIENTATION, null) == ORIENTATION_HORIZONTAL) {
+            MinimizePolicy.Orientation.HORIZONTAL
+        } else {
+            MinimizePolicy.Orientation.VERTICAL
+        }
+    }
+
+    fun setMinimizeOrientation(value: MinimizePolicy.Orientation) {
+        prefs.edit {
+            putString(
+                KEY_MINIMIZE_ORIENTATION,
+                if (value == MinimizePolicy.Orientation.HORIZONTAL) ORIENTATION_HORIZONTAL
+                else ORIENTATION_VERTICAL,
+            )
+        }
+    }
+
     companion object {
         const val PREFS_NAME = "vboard"
         const val PREFS_ID_NAME = "vboard_id"
@@ -67,6 +105,12 @@ class SettingsStore(context: Context) {
         const val KEY_BACKEND_URL = "backend_url"
         const val KEY_DEVICE_ID = "device_id"
         const val KEY_MIC_REQUESTED = "mic_requested"
+        const val KEY_MINIMIZED = "minimized"
+        const val KEY_MINIMIZE_X = "minimize_x"
+        const val KEY_MINIMIZE_Y = "minimize_y"
+        const val KEY_MINIMIZE_ORIENTATION = "minimize_orientation"
+        const val ORIENTATION_VERTICAL = "vertical"
+        const val ORIENTATION_HORIZONTAL = "horizontal"
         const val DEFAULT_BACKEND_URL = "http://127.0.0.1:8000"
         const val MAX_BACKEND_URL_LENGTH = 2048
     }

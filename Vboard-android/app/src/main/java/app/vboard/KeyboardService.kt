@@ -13,6 +13,11 @@ import android.view.inputmethod.EditorInfo
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
+import app.vboard.suggest.SuggestionController
+import app.vboard.voice.StreamMessages
+import app.vboard.voice.VoiceStreamRunner
+import java.util.Arrays
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -20,17 +25,20 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import app.vboard.suggest.SuggestionController
-import java.util.Arrays
-import kotlin.coroutines.cancellation.CancellationException
 
-class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.Listener {
+class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.Listener, MinimizeModeView.Listener {
 
     private var keyboardView: KeyboardView? = null
     private var editor: TextBoxEditor? = null
     private var imeOptions: Int = EditorInfo.IME_NULL
     private var recorder: Recorder? = null
     private var recording = false
+
+    /** Minimize mode: keys and top bar hide, only the pill shows and is touchable. */
+    private var minimized = false
+
+    /** Pill direction; persisted, restored with the mode and position. */
+    private var smallOrientation = MinimizePolicy.Orientation.VERTICAL
 
     /** Take confirmed with ✓, held in RAM until the send finishes. Zeroed after. */
     private var pendingWav: ByteArray? = null
@@ -40,6 +48,12 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
     private var backend: BackendClient? = null
     private var lastBackendUrl: String? = null
     private var sendJob: Job? = null
+
+    /** WS stream for the current utterance; null when streaming is off/unavailable. */
+    private var streamRunner: VoiceStreamRunner? = null
+
+    /** Full box text at ✓, kept for the POST fallback when the stream fails. */
+    private var pendingContextText = ""
 
     /** True while a /v1/process round-trip is in flight; a second ✓ is ignored. */
     private var sending = false
@@ -63,6 +77,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
         return KeyboardView(this).also {
             it.listener = this
             it.topBarListener = this
+            it.minimizeListener = this
             val controller = suggestController ?: SuggestionController(
                 scope = serviceScope,
                 openWordList = {
@@ -91,6 +106,22 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
         keyboardView?.refreshInsets()
         if (!restarting) maybeAutoCapitalize()
         updateSuggestions()
+        if (store().isMinimized() && !minimized) enterMinimize()
+    }
+
+    /**
+     * Minimize mode: only the pill is touchable and the app keeps its full
+     * height behind the keyboard, so it is not pushed up and stays usable.
+     */
+    override fun onComputeInsets(outInsets: InputMethodService.Insets) {
+        super.onComputeInsets(outInsets)
+        if (!minimized) return
+        val fullHeight = resources.displayMetrics.heightPixels
+        outInsets.contentTopInsets = fullHeight
+        outInsets.visibleTopInsets = fullHeight
+        outInsets.touchableInsets = InputMethodService.Insets.TOUCHABLE_INSETS_REGION
+        outInsets.touchableRegion.setEmpty()
+        keyboardView?.minimizeTouchableRect()?.let { outInsets.touchableRegion.set(it) }
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
@@ -142,9 +173,8 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
     }
 
     override fun onBackspace() {
-        clearUndo()
         keyboardView?.clearOneShotShift()
-        editor?.deleteCodePointBefore()
+        deleteBackwards()
         updateSuggestions()
     }
 
@@ -152,8 +182,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
         val ed = editor ?: return false
         val keepGoing = KeyLayouts.RepeatTiming.shouldContinue(ed.hasTextBeforeCursor())
         if (keepGoing) {
-            clearUndo()
-            ed.deleteCodePointBefore()
+            deleteBackwards()
             updateSuggestions()
         }
         return keepGoing
@@ -193,17 +222,23 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
             return
         }
         clearPendingWav()
+        // Stream-first: connect now so mic slices flow live; when the socket
+        // never opens the take still records and POSTs at ✓.
+        val runner = prepareStream()
         val rec = Recorder(
             onAmplitude = { raw -> keyboardView?.post { keyboardView?.setRecordingAmplitude(raw) } },
             onAutoStop = { keyboardView?.post { finishRecording(auto = true) } },
+            onChunk = { chunk -> runner?.offerPcm(chunk) },
         )
         when (rec.start()) {
             Recorder.StartResult.Started -> {
                 recorder = rec
                 recording = true
+                streamRunner = runner
                 keyboardView?.showRecordingBar()
             }
             Recorder.StartResult.Failed -> {
+                runner?.cancel()
                 Toast.makeText(this, "Microphone unavailable. Try again.", Toast.LENGTH_SHORT).show()
             }
         }
@@ -236,6 +271,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
     override fun onCancel() {
         if (!recording) return
         stopRecordingSilently()
+        cancelStream()
         clearPendingWav()
         keyboardView?.showIdleBar()
     }
@@ -268,6 +304,105 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
         ed.moveCursorToEnd(restore.length)
     }
 
+    override fun onMinimizeClick() {
+        enterMinimize()
+    }
+
+    /**
+     * Pill mic lives only in the idle face: start recording and show the
+     * recording face. Same guards, Recorder and stream-first path as voice.
+     */
+    override fun onMicClick() {
+        if (recording) return
+        onVoiceClick()
+    }
+
+    /** Pill check: stop, send through the unchanged voice path, stay small. */
+    override fun onCheckClick() {
+        if (!minimized || !recording) return
+        finishRecording(auto = false)
+    }
+
+    /** Pill X: cancels the recording only; idle it is not shown. */
+    override fun onCancelClick() = onCancel()
+
+    /** Pill delete: selected text goes whole, otherwise one code point back. */
+    override fun onDeleteClick() = deleteBackwards()
+
+    /**
+     * Backspace for the pill: holding repeats (the view re-fires), and an
+     * active selection deletes whole via an empty commit. Password fields
+     * delete blindly, exactly like the keyboard key — never read there.
+     */
+    private fun deleteBackwards() {
+        val ed = editor ?: return
+        val inputType = currentInputEditorInfo?.inputType ?: EditorInfo.TYPE_NULL
+        clearUndo()
+        if (!ContextPolicy.isPasswordInputType(inputType)) {
+            val selected = try {
+                currentInputConnection?.getSelectedText(0)?.toString()
+            } catch (_: Exception) {
+                null
+            }
+            if (!selected.isNullOrEmpty()) {
+                ed.commitText("")
+                return
+            }
+        }
+        ed.deleteCodePointBefore()
+    }
+
+    /**
+     * Keyboard button cycles: vertical idle flips to horizontal, horizontal
+     * idle returns to the full keyboard. The flip key is gone on purpose.
+     */
+    override fun onKeyboardClick() {
+        if (!minimized) return
+        if (smallOrientation == MinimizePolicy.Orientation.VERTICAL) {
+            smallOrientation = MinimizePolicy.flipped(smallOrientation)
+            store().setMinimizeOrientation(smallOrientation)
+            keyboardView?.setMinimizeOrientation(smallOrientation)
+        } else {
+            smallOrientation = MinimizePolicy.Orientation.VERTICAL
+            store().setMinimizeOrientation(smallOrientation)
+            exitMinimize()
+        }
+    }
+
+    override fun onPillDragged(dxPx: Int, dyPx: Int) {
+        if (!minimized) return
+        keyboardView?.moveMinimizeBy(dxPx, dyPx)
+    }
+
+    override fun onPillDragEnd() {
+        if (!minimized) return
+        val pos = keyboardView?.minimizePosition() ?: return
+        if (pos.first >= 0 && pos.second >= 0) store().setMinimizePosition(pos.first, pos.second)
+    }
+
+    /**
+     * Minimize mode: keys and top bar hide, only the pill shows. Blocked
+     * mid-flight; the pill owns no send state. Mode persists in SettingsStore.
+     */
+    private fun enterMinimize() {
+        if (minimized || !MinimizePolicy.canEnter(recording, sending)) return
+        minimized = true
+        store().setMinimized(true)
+        keyboardView?.showMinimized()
+        smallOrientation = store().getMinimizeOrientation()
+        keyboardView?.setMinimizeOrientation(smallOrientation)
+        val pos = store().getMinimizePosition()
+        if (pos != null) keyboardView?.setMinimizePosition(pos.first, pos.second)
+        else keyboardView?.defaultMinimizePosition()
+    }
+
+    private fun exitMinimize() {
+        if (!minimized) return
+        minimized = false
+        store().setMinimized(false)
+        keyboardView?.showFullKeyboard()
+    }
+
     private fun finishRecording(auto: Boolean) {
         if (!recording) return
         recording = false
@@ -284,6 +419,8 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
             null
         }
         if (wav == null) {
+            // Short take: nothing to stream or POST.
+            cancelStream()
             keyboardView?.showIdleBar()
             if (!auto) Toast.makeText(this, "Too short. Hold the thought a beat longer.", Toast.LENGTH_SHORT).show()
             return
@@ -291,6 +428,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
         pendingWav = wav
         val store = store()
         if (!store.hasLanguages()) {
+            cancelStream()
             clearPendingWav()
             keyboardView?.showIdleBar()
             toast("Pick your languages in the Vboard app")
@@ -302,19 +440,138 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
         val full = editor?.readFullText(inputType, ContextPolicy.CONTEXT_MAX_CHARS)
             ?: TextBoxEditor.FullText("", "", "", "", 0, false)
         if (!full.reliable) {
+            cancelStream()
             clearPendingWav()
             keyboardView?.showIdleBar()
             toast(MSG_SELECTION_UNSURE)
             return
         }
         snapshotFull = full.full
-        val contextText = if (full.full.length <= ContextPolicy.CONTEXT_MAX_CHARS) {
+        val contextText = capContextText(full)
+        keyboardView?.showProcessingBar()
+        pendingContextText = contextText
+        val runner = streamRunner
+        streamRunner = null
+        if (runner != null && runner.finish()) {
+            // Stream path: the final/fallback arrives via the runner events.
+            sending = true
+        } else {
+            // No live socket (never opened, or failed mid-record): the
+            // single POST retry path doubles as the plain fallback.
+            runner?.cancel()
+            sendToBackend(store, contextText)
+        }
+    }
+
+    /**
+     * Connects the WS stream at record start so mic slices flow live. The
+     * `start` frame mirrors POST /v1/process: same `device_id`, same
+     * `languages` CSV, same capped box text (`box_text`), plus the source
+     * app package (`app`). Null when the URL is unusable — recording still
+     * proceeds and POSTs at ✓. Never throws.
+     */
+    private fun prepareStream(): VoiceStreamRunner? {
+        return try {
+            val store = store()
+            val baseUrl = store.getBackendUrl()
+            if (StreamMessages.toWebSocketUrl(baseUrl) == null) return null
+            val inputType = currentInputEditorInfo?.inputType ?: EditorInfo.TYPE_NULL
+            val full = editor?.readFullText(inputType, ContextPolicy.CONTEXT_MAX_CHARS)
+            val boxText = if (full != null && full.reliable) capContextText(full) else ""
+            val appName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                try {
+                    currentInputEditorInfo?.packageName
+                } catch (_: Exception) {
+                    null
+                }
+            } else {
+                null
+            }
+            val startJson = StreamMessages.buildStart(
+                deviceId = store.getDeviceId(),
+                languages = store.getLanguagesCsv(),
+                boxText = boxText,
+                app = appName,
+            )
+            val runner = VoiceStreamRunner(
+                serviceScope,
+                object : VoiceStreamRunner.Events {
+                    override fun onStreamFinal(final: StreamMessages.ServerMessage.Final) {
+                        handleStreamFinal(final)
+                    }
+
+                    override fun onStreamFallback(reason: String) {
+                        handleStreamFallback(reason)
+                    }
+                },
+            )
+            if (runner.start(baseUrl, startJson)) runner else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** Tears down the WS stream without firing events. Callers own the UI. */
+    private fun cancelStream() {
+        val runner = streamRunner
+        streamRunner = null
+        try {
+            runner?.cancel()
+        } catch (_: Exception) {
+            // Teardown must never crash the IME.
+        }
+    }
+
+    /**
+     * Stream `final`: identical handling to the POST path — the action is
+     * applied, never the interim text. Numbers only in the log.
+     */
+    private fun handleStreamFinal(final: StreamMessages.ServerMessage.Final) {
+        serviceScope.launch {
+            sending = false
+            sendJob = null
+            Log.d(TAG, "stream final usedFallback=" + final.usedFallback + " cut=" + final.cut)
+            applyProcessResult(
+                200,
+                ProcessResponse(
+                    transcript = final.transcript,
+                    action = final.action,
+                    usedFallback = final.usedFallback,
+                    note = final.note,
+                ),
+            )
+            clearPendingWav()
+            // A newer recording owns the pill; don't clobber it.
+            if (!recording) keyboardView?.showIdleBar()
+        }
+    }
+
+    /**
+     * Any stream failure: the single POST /v1/process retry with the
+     * retained WAV. Reason is a code (never content). While still recording
+     * the ✓-time `finish()` takes the POST path instead, so this is a no-op.
+     */
+    private fun handleStreamFallback(reason: String) {
+        serviceScope.launch {
+            if (recording) return@launch
+            Log.d(TAG, "stream fallback reason=" + reason)
+            sending = false
+            sendJob = null
+            if (pendingWav == null) {
+                keyboardView?.showIdleBar()
+                return@launch
+            }
+            sendToBackend(store(), pendingContextText)
+        }
+    }
+
+    /** Wire-length box text, capped nearest-the-cursor-first. */
+    private fun capContextText(full: TextBoxEditor.FullText): String {
+        return if (full.full.length <= ContextPolicy.CONTEXT_MAX_CHARS) {
             full.full
         } else {
             ContextPolicy.capContext(full.before + full.selected, full.after, ContextPolicy.CONTEXT_MAX_CHARS)
         }
-        keyboardView?.showProcessingBar()
-        sendToBackend(store, contextText)
     }
 
     private fun stopRecordingSilently() {
@@ -332,6 +589,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
         val wav = pendingWav
         pendingWav = null
         if (wav != null) Arrays.fill(wav, 0)
+        pendingContextText = ""
     }
 
     private fun showUndo(previousFullText: String) {
@@ -393,22 +651,28 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
             sending = false
             sendJob = null
             when (outcome) {
-                is SendOutcome.Done -> {
-                    val resp = outcome.response
-                    when {
-                        outcome.code != 200 || resp == null ->
-                            toast(MSG_BAD_RECORDING)
-                        resp.action == null ->
-                            toast(MSG_NOTHING_TO_CHANGE)
-                        resp.action.action == "insert" -> applyInsert(resp)
-                        resp.action.action == "rewrite" -> applyRewrite(resp)
-                        else -> toast(MSG_REPLACE_UNSUPPORTED)
-                    }
-                }
+                is SendOutcome.Done -> applyProcessResult(outcome.code, outcome.response)
                 SendOutcome.Failed -> toast(MSG_NO_CONNECTION)
             }
             // A newer recording owns the pill; don't clobber it.
             if (!recording) keyboardView?.showIdleBar()
+        }
+    }
+
+    /**
+     * Shared result handling for the POST path and the stream `final` path:
+     * insert/rewrite apply, null action or errors toast. Partial text never
+     * reaches here.
+     */
+    private fun applyProcessResult(code: Int, resp: ProcessResponse?) {
+        when {
+            code != 200 || resp == null ->
+                toast(MSG_BAD_RECORDING)
+            resp.action == null ->
+                toast(MSG_NOTHING_TO_CHANGE)
+            resp.action.action == "insert" -> applyInsert(resp)
+            resp.action.action == "rewrite" -> applyRewrite(resp)
+            else -> toast(MSG_REPLACE_UNSUPPORTED)
         }
     }
 
@@ -466,6 +730,7 @@ class KeyboardService : InputMethodService(), KeyboardView.Listener, TopBarView.
     }
 
     private fun cancelSend() {
+        cancelStream()
         backend?.cancel()
         sendJob?.cancel()
         sendJob = null

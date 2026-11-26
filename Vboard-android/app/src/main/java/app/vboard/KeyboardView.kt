@@ -2,9 +2,12 @@ package app.vboard
 
 import android.content.Context
 import android.graphics.Paint
+import android.graphics.Rect
 import android.os.SystemClock
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.View
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -30,6 +33,19 @@ class KeyboardView(context: Context) : LinearLayout(context) {
 
     private var topBar: TopBarView? = null
 
+    var minimizeListener: MinimizeModeView.Listener? = null
+        set(value) {
+            field = value
+            minimizeBar?.listener = value
+        }
+
+    private var minimizeContainer: FrameLayout? = null
+    private var minimizeBar: MinimizeModeView? = null
+    private var minimized = false
+    private var pillX = -1
+    private var pillY = -1
+    private val keyRows = mutableListOf<LinearLayout>()
+
     private var shiftState = KeyLayouts.ShiftState.OFF
     private var lastShiftTapMs = 0L
     private var symbolsOn = false
@@ -53,10 +69,24 @@ class KeyboardView(context: Context) : LinearLayout(context) {
             addView(it)
             topBar = it
         }
+        MinimizeModeView(context).also {
+            it.listener = minimizeListener
+            minimizeBar = it
+            minimizeContainer = FrameLayout(context).apply {
+                visibility = GONE
+                layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f)
+                addView(it)
+            }
+            addView(minimizeContainer)
+        }
         buildRows()
         ViewCompat.setOnApplyWindowInsetsListener(this) { v, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            v.setPadding(side, dp(6), side, bars.bottom)
+            // Small mode owns its padding (transparent full layer); touching
+            // it here would lift the pill and misplace its touches.
+            if (!minimized) {
+                val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+                v.setPadding(side, dp(6), side, bars.bottom)
+            }
             insets
         }
     }
@@ -84,11 +114,13 @@ class KeyboardView(context: Context) : LinearLayout(context) {
         removeCallbacks(symbolsToggleRunnable)
         symbolsTogglePending = false
         cancelKeyRepeats()
-        while (childCount > 1) removeViewAt(1)
+        for (row in keyRows) removeView(row)
+        keyRows.clear()
         letterKeys.clear()
         shiftKey = null
         backspaceKey = null
         buildRows()
+        syncMinimizedVisibility()
     }
 
     fun cancelKeyRepeats() {
@@ -96,27 +128,180 @@ class KeyboardView(context: Context) : LinearLayout(context) {
     }
 
     fun showIdleBar() {
-        topBar?.showIdle()
+        if (minimized) {
+            minimizeBar?.showIdle()
+            applyMinimizePosition()
+        } else {
+            topBar?.showIdle()
+        }
     }
 
     fun showRecordingBar() {
-        topBar?.showRecording()
+        if (minimized) {
+            val bar = minimizeBar
+            val lp = bar?.layoutParams as? FrameLayout.LayoutParams
+            val anchorRight = if (bar != null && lp != null && bar.width > 0) {
+                lp.leftMargin + bar.width
+            } else {
+                -1
+            }
+            bar?.showRecording()
+            if (anchorRight >= 0) minimizeContainer?.post { anchorRecordingLeft(anchorRight) }
+        } else {
+            topBar?.showRecording()
+        }
     }
 
     fun showProcessingBar() {
-        topBar?.showProcessing()
+        if (minimized) {
+            minimizeBar?.showProcessing()
+            applyMinimizePosition()
+        } else {
+            topBar?.showProcessing()
+        }
     }
 
     fun showAgentWorkingBar() {
-        topBar?.showAgentWorking()
+        if (minimized) minimizeBar?.showIdle() else topBar?.showAgentWorking()
     }
 
     fun setRecordingAmplitude(raw: Float) {
-        topBar?.setAmplitude(raw)
+        if (minimized) minimizeBar?.setAmplitude(raw) else topBar?.setAmplitude(raw)
     }
 
     fun setUndoVisible(visible: Boolean) {
-        topBar?.setUndoVisible(visible)
+        if (!minimized) topBar?.setUndoVisible(visible)
+    }
+
+    /** Hides keys and top bar; only the pill shows, pinned to the right edge. */
+    fun showMinimized() {
+        minimized = true
+        syncMinimizedVisibility()
+    }
+
+    /** Restores keys and top bar; the pill hides. */
+    fun showFullKeyboard() {
+        minimized = false
+        syncMinimizedVisibility()
+        showIdleBar()
+    }
+
+    fun isMinimized(): Boolean = minimized
+
+    fun setMinimizeOrientation(value: MinimizePolicy.Orientation) {
+        minimizeBar?.setOrientation(value)
+        // The wider face must not hang off-screen; pull it back inside.
+        minimizeContainer?.post { clampMinimizePosition() }
+    }
+
+    private fun syncMinimizedVisibility() {
+        if (minimized) {
+            // Transparent full-height layer: no dark band, the app keeps its
+            // size behind it, and only the pill is touchable via insets.
+            setBackgroundColor(0x00000000.toInt())
+            setPadding(0, 0, 0, 0)
+            minimumHeight = resources.displayMetrics.heightPixels
+        } else {
+            val side = dp(6)
+            setBackgroundColor(0xFF17181B.toInt())
+            setPadding(side, dp(6), side, 0)
+            minimumHeight = 0
+        }
+        topBar?.visibility = if (minimized) GONE else VISIBLE
+        minimizeContainer?.visibility = if (minimized) VISIBLE else GONE
+        for (row in keyRows) row.visibility = if (minimized) GONE else VISIBLE
+        // Coming back to full keys must re-apply the navigation-bar bottom
+        // padding at once; nothing else re-sends insets on this path.
+        if (!minimized) refreshInsets()
+    }
+
+    /** Current pill top-left in px; (-1, -1) means never placed. */
+    fun minimizePosition(): Pair<Int, Int> = pillX to pillY
+
+    /** Restores a saved position once laid out; ignored when never placed. */
+    fun setMinimizePosition(x: Int, y: Int) {
+        pillX = x
+        pillY = y
+        minimizeContainer?.post { applyMinimizePosition() }
+    }
+
+    /** First open: right edge, vertically centered. */
+    fun defaultMinimizePosition() {
+        minimizeContainer?.post {
+            val container = minimizeContainer ?: return@post
+            val bar = minimizeBar ?: return@post
+            pillX = (container.width - bar.width).coerceAtLeast(0)
+            pillY = (container.height - bar.height).coerceAtLeast(0) / 2
+            applyMinimizePosition()
+        }
+    }
+
+    /** Nudges the pill by a drag delta, clamped inside the screen. */
+    fun moveMinimizeBy(dx: Int, dy: Int) {
+        if (pillX < 0 || pillY < 0) {
+            val container = minimizeContainer
+            val bar = minimizeBar
+            if (container != null && bar != null && container.width > 0 && bar.width > 0) {
+                pillX = (container.width - bar.width).coerceAtLeast(0)
+                pillY = (container.height - bar.height).coerceAtLeast(0) / 2
+            } else {
+                defaultMinimizePosition()
+                return
+            }
+        }
+        pillX += dx
+        pillY += dy
+        clampMinimizePosition()
+    }
+
+    /** Pulls the pill back inside the screen; call after size changes. */
+    private fun clampMinimizePosition() {
+        if (pillX < 0 || pillY < 0) return
+        val clamped = MinimizePolicy.clampPosition(
+            pillX,
+            pillY,
+            (minimizeContainer?.width ?: 0) - (minimizeBar?.width ?: 0),
+            (minimizeContainer?.height ?: 0) - (minimizeBar?.height ?: 0),
+        )
+        pillX = clamped.first
+        pillY = clamped.second
+        applyMinimizePosition()
+    }
+
+    /**
+     * Recording bar grows leftward from the idle pill's right edge and stays
+     * on screen; the idle position restores when it returns to idle.
+     */
+    private fun anchorRecordingLeft(anchorRight: Int) {
+        val bar = minimizeBar ?: return
+        val lp = bar.layoutParams as? FrameLayout.LayoutParams ?: return
+        if (bar.width <= 0) return
+        val maxLeft = ((minimizeContainer?.width ?: 0) - bar.width).coerceAtLeast(0)
+        lp.leftMargin = MinimizePolicy.anchorRecordingLeft(anchorRight, bar.width, maxLeft)
+        bar.layoutParams = lp
+    }
+
+    private fun applyMinimizePosition() {
+        val bar = minimizeBar ?: return
+        val lp = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+        )
+        lp.leftMargin = pillX.coerceAtLeast(0)
+        lp.topMargin = pillY.coerceAtLeast(0)
+        bar.layoutParams = lp
+    }
+
+    /** Pill bounds in window coordinates for the touchable-region inset. */
+    fun minimizeTouchableRect(): Rect? {
+        if (!minimized) return null
+        val bar = minimizeBar ?: return null
+        if (bar.visibility != VISIBLE || bar.width <= 0 || bar.height <= 0) return null
+        // Window coordinates, not screen: the inset region is window-relative
+        // and a status-bar-sized offset kills the short horizontal pill.
+        val loc = IntArray(2)
+        bar.getLocationInWindow(loc)
+        return Rect(loc[0], loc[1], loc[0] + bar.width, loc[1] + bar.height)
     }
 
     fun showSuggestions(words: List<String>) {
@@ -312,6 +497,7 @@ class KeyboardView(context: Context) : LinearLayout(context) {
             buttons += key
         }
         addView(row)
+        keyRows += row
         return buttons
     }
 
